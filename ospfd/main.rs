@@ -3,6 +3,7 @@ mod macros;
 
 use std::net::{IpAddr, Ipv4Addr};
 
+use ospf_packet::*;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::Packet;
 use pnet::transport::transport_channel;
@@ -26,19 +27,28 @@ async fn main() {
     };
 
     loop {
-        let ospf_hello = ospf_packet::Ospf {
+        let ospf_hello = Ospf {
             version: 2,
-            message_type: ospf_packet::packet::types::HELLO_PACKET,
+            message_type: packet::types::HELLO_PACKET,
             length: 44,
             router_id: ip2hex!(10, 10, 10, 10),
             area_id: ip2hex!(0, 0, 0, 0),
             checksum: 0,
             au_type: 0,
             authentication: 0,
-            payload: raw_hex!("ffffff00000a020100000028a801010100000000"),
+            payload: packet::HelloPacket {
+                network_mask: ip2hex!(255, 255, 255, 0),
+                hello_interval: 10,
+                options: 0,
+                router_priority: 0,
+                router_dead_interval: 40,
+                designated_router: ip2hex!(10, 10, 10, 10),
+                backup_designated_router: ip2hex!(0, 0, 0, 0),
+                neighbors: vec![],
+            }.to_bytes().to_vec(),
         };
-        let mut buffer = vec![0; 0x30];
-        let mut packet = ospf_packet::MutableOspfPacket::new(&mut buffer).unwrap();
+        let mut buffer = vec![0; ospf_hello.len()];
+        let mut packet = MutableOspfPacket::new(&mut buffer).unwrap();
         packet.populate(&ospf_hello);
         let len = packet.packet().len();
         match tx.send_to(packet, BROADCAST_ADDR) {

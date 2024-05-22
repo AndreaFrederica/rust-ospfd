@@ -1,4 +1,41 @@
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+
+pub trait ToBytesMut {
+    fn to_bytes_mut(&self) -> BytesMut;
+}
+
+pub trait ToBytes {
+    fn to_bytes(&self) -> Bytes;
+}
+
+impl<T: ToBytesMut> ToBytes for T {
+    fn to_bytes(&self) -> Bytes {
+        self.to_bytes_mut().freeze()
+    }
+}
+
+pub trait FromBuf {
+    fn from_buf(buf: &mut impl Buf) -> Self;
+}
+
+impl<T: ToBytes> ToBytesMut for Vec<T> {
+    fn to_bytes_mut(&self) -> BytesMut {
+        self.iter().fold(BytesMut::new(), |mut acc, v| {
+            acc.extend_from_slice(&v.to_bytes());
+            acc
+        })
+    }
+}
+
+impl<T: FromBuf> FromBuf for Vec<T> {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        let mut vec = vec![];
+        while buf.has_remaining() {
+            vec.push(T::from_buf(buf));
+        }
+        vec
+    }
+}
 
 pub struct Bits<T: Buf> {
     buf: T,
@@ -35,6 +72,10 @@ impl<T: Buf> Bits<T> {
             N::from_u128(num)
         }
     }
+
+    pub fn get_buf(&mut self) -> &mut T {
+        &mut self.buf
+    }
 }
 
 impl<T: Buf> From<T> for Bits<T> {
@@ -62,8 +103,9 @@ impl BitsMut {
         if n % 8 == 0 {
             assert_eq!(self.bit, 0);
             let num = val.to_u128();
-            for i in 1..=n / 8 {
-                self.buf.put_u8((num >> (8 * (n - i))) as u8);
+            let b = n / 8;
+            for i in 1..=b {
+                self.buf.put_u8((num >> (8 * (b - i))) as u8);
             }
         } else {
             let num = val.to_u128();
@@ -76,6 +118,11 @@ impl BitsMut {
                 }
             }
         }
+    }
+
+    pub fn extend_from_slice(&mut self, extend: &[u8]) {
+        assert_eq!(self.bit, 0);
+        self.buf.extend_from_slice(extend);
     }
 }
 
@@ -137,5 +184,75 @@ impl PrimitiveInteger for u128 {
 
     fn from_u128(val: u128) -> Self {
         val as Self
+    }
+}
+
+impl ToBytesMut for u8 {
+    fn to_bytes_mut(&self) -> BytesMut {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&self.to_be_bytes());
+        buf
+    }
+}
+
+impl ToBytesMut for u16 {
+    fn to_bytes_mut(&self) -> BytesMut {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&self.to_be_bytes());
+        buf
+    }
+}
+
+impl ToBytesMut for u32 {
+    fn to_bytes_mut(&self) -> BytesMut {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&self.to_be_bytes());
+        buf
+    }
+}
+
+impl ToBytesMut for u64 {
+    fn to_bytes_mut(&self) -> BytesMut {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&self.to_be_bytes());
+        buf
+    }
+}
+
+impl ToBytesMut for u128 {
+    fn to_bytes_mut(&self) -> BytesMut {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&self.to_be_bytes());
+        buf
+    }
+}
+
+impl FromBuf for u8 {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        buf.get_u8()
+    }
+}
+
+impl FromBuf for u16 {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        buf.get_u16()
+    }
+}
+
+impl FromBuf for u32 {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        buf.get_u32()
+    }
+}
+
+impl FromBuf for u64 {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        buf.get_u64()
+    }
+}
+
+impl FromBuf for u128 {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        buf.get_u128()
     }
 }

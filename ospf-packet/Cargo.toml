@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1.6.*"                # convenient byte manipulation
-pnet = "0.34.*"                # raw socket
-pnet_macros = "0.34.*"         # pnet macros
-pnet_macros_support = "0.34.*" # pnet macros support
+bytes = "1.6.*"                           # convenient byte manipulation
+ospf-macros = { path = "../ospf-macros" } # ospf packet macors
+pnet = "0.34.*"                           # raw socket
+pnet_macros = "0.34.*"                    # pnet macros
+pnet_macros_support = "0.34.*"            # pnet macros support

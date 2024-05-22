@@ -1,6 +1,8 @@
-mod bits;
+pub mod bits;
 pub mod lsa;
 pub mod packet;
+
+pub use bits::{FromBuf, ToBytes, ToBytesMut};
 
 use pnet_macros::packet;
 use pnet_macros_support::types::*;
@@ -18,4 +20,10 @@ pub struct Ospf {
     pub authentication: u64be,
     #[payload]
     pub payload: Vec<u8>, // the message type specific packet
+}
+
+impl Ospf {
+    pub fn len(&self) -> usize {
+        24 + self.payload.len()
+    }
 }
