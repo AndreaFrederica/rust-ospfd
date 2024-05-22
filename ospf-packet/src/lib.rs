@@ -1,3 +1,4 @@
+mod bits;
 pub mod lsa;
 pub mod packet;
 

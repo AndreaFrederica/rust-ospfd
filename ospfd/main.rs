@@ -1,6 +1,8 @@
+mod constant;
+mod macros;
+
 use std::net::{IpAddr, Ipv4Addr};
 
-use ospf_macros::*;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::Packet;
 use pnet::transport::transport_channel;

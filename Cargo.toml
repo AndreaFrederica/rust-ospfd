@@ -8,11 +8,10 @@ name = "ospfd"
 path = "ospfd/main.rs"
 
 [workspace]
-members = ["ospf-packet", "ospf-macros"]
+members = ["ospf-packet"]
 
 [dependencies]
 bytes = "1.6.*"                                     # convenient byte manipulation
-ospf-macros = { path = "ospf-macros" }              # OSPF util macros
 ospf-packet = { path = "ospf-packet" }              # OSPF packet declaration & parsing
 pnet = "0.34.*"                                     # raw socket
 tokio = { version = "1.37.0", features = ["full"] } # async runtime

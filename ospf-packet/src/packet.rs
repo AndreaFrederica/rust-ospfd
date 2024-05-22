@@ -1,5 +1,4 @@
-#![allow(unused)]
-
+use super::bits::{Bits, BitsMut};
 use super::lsa::*;
 
 pub mod types {
@@ -30,7 +29,7 @@ pub struct DBDescription {
     pub options: u8,
     pub db_description: u8,
     pub db_sequence_number: u32,
-    pub lsa_header: Vec<LSAHeader>,
+    pub lsa_header: Vec<LsaHeader>,
 }
 
 /// Represents a OSPF Link State Request Packet.
@@ -44,12 +43,12 @@ pub struct LSRequest {
 /// Represents a OSPF Link State Update Packet.
 #[derive(Clone, Debug)]
 pub struct LSUpdate {
-    pub lsa_count: u32,
-    pub lass: Vec<LSA>,
+    pub num_lsa: u32,
+    pub lsa: Vec<Lsa>,
 }
 
 /// Represents a OSPF Link State Acknowledge Packet.
 #[derive(Clone, Debug)]
 pub struct LSAcknowledge {
-    pub lsa_header: Vec<LSAHeader>,
+    pub lsa_header: Vec<LsaHeader>,
 }
