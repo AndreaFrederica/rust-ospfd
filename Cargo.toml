@@ -2,6 +2,11 @@
 name = "rust-ospfd"
 version = "0.1.0"
 edition = "2021"
+default-run = "rust-ospfd"
 
 [dependencies]
-pnet = "0.34.*" # raw socket
+bytes = "1.6.0"                                     # convenient byte manipulation
+pnet = "0.34.*"                                     # raw socket
+pnet_macros = "0.34.*"                              # pnet macros
+pnet_macros_support = "0.34.*"                      # pnet macros support
+tokio = { version = "1.37.0", features = ["full"] } # async runtime
