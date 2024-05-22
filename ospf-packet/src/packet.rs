@@ -29,7 +29,7 @@ pub struct DBDescription {
     pub interface_mtu: u16,
     pub options: u8,
     pub db_description: u8,
-    pub db_sequence_numr: u32,
+    pub db_sequence_number: u32,
     pub lsa_header: Vec<LSAHeader>,
 }
 

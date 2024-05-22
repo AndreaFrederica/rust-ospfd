@@ -15,3 +15,17 @@ macro_rules! raw_hex {
         }
     };
 }
+
+#[macro_export]
+macro_rules! ipv4 {
+    ($a:expr, $b:expr, $c:expr, $d:expr) => {
+        IpAddr::V4(Ipv4Addr::new($a, $b, $c, $d))
+    };
+}
+
+#[macro_export]
+macro_rules! ip2hex {
+    ($a:expr, $b:expr, $c:expr, $d:expr) => {
+        ($a as u32) << 24 | ($b as u32) << 16 | ($c as u32) << 8 | ($d as u32)
+    };
+}
