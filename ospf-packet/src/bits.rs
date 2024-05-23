@@ -27,16 +27,6 @@ impl<T: ToBytes> ToBytesMut for Vec<T> {
     }
 }
 
-impl<T: FromBuf> FromBuf for Vec<T> {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        let mut vec = vec![];
-        while buf.has_remaining() {
-            vec.push(T::from_buf(buf));
-        }
-        vec
-    }
-}
-
 pub struct Bits<T: Buf> {
     buf: T,
     bit: u8,

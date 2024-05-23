@@ -3,12 +3,12 @@ use core::panic;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use regex::Regex;
-use syn::{DataStruct, Fields, Ident};
+use syn::{DataStruct, Fields, Ident, Meta};
 
 enum BitSize {
     Data(u32),
     Zero(u32),
-    Other(syn::Type),
+    Vec(String, String),
 }
 
 fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
@@ -19,6 +19,29 @@ fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
     fields.iter().map(|f| {
         let ident = f.ident.as_ref().unwrap();
         let ty = f.ty.to_token_stream().to_string();
+        let attr = f
+            .attrs
+            .iter()
+            .find_map(|attr| {
+                if attr.meta.path().is_ident("size") {
+                    match &attr.meta {
+                        Meta::List(list) => Some(
+                            list.parse_args::<syn::Expr>()
+                                .unwrap()
+                                .to_token_stream()
+                                .to_string(),
+                        ),
+                        _ => panic!(
+                            "size attribute should be a list, no {:?}",
+                            attr.meta.to_token_stream()
+                        ),
+                    }
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(String::new());
+
         let zero_r = Regex::new(r"PhantomData\s*:?:?\s*<\s*[ui](\d+)\s*>").unwrap();
         if let Some(caps) = zero_r.captures(&ty) {
             return (ident, BitSize::Zero(caps[1].parse().expect(&ty)));
@@ -27,7 +50,11 @@ fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
         if let Some(caps) = data_r.captures(&ty) {
             return (ident, BitSize::Data(caps[1].parse().expect(&ty)));
         }
-        (ident, BitSize::Other(f.ty.clone()))
+        let vec_r = Regex::new(r"Vec\s*:?:?\s*<\s*(\w+)\s*>").unwrap();
+        if let Some(caps) = vec_r.captures(&ty) {
+            return (ident, BitSize::Vec(caps[1].to_string(), attr));
+        }
+        panic!("Unsupported type {}", ty);
     })
 }
 
@@ -35,7 +62,7 @@ pub fn generate_to_bytes(s: &DataStruct, name: &Ident) -> TokenStream {
     let fields = get_field_tuples(s).map(|(ident, size)| match size {
         BitSize::Data(n) => quote! { buf.put_un(self.#ident, #n); },
         BitSize::Zero(n) => quote! { buf.put_un(0u32, #n); },
-        BitSize::Other(_) => quote! { buf.extend_from_slice(&self.#ident.to_bytes()); },
+        BitSize::Vec(..) => quote! { buf.extend_from_slice(&self.#ident.to_bytes()); },
     });
     quote! {
         impl ToBytesMut for #name {
@@ -49,16 +76,46 @@ pub fn generate_to_bytes(s: &DataStruct, name: &Ident) -> TokenStream {
 }
 
 pub fn generate_from_buf(s: &DataStruct, name: &Ident) -> TokenStream {
-    let fields = get_field_tuples(s).map(|(ident, size)| match size {
-        BitSize::Data(n) => quote! { #ident: buf.get_un(#n), },
-        BitSize::Zero(_) => quote! { #ident: PhantomData, },
-        BitSize::Other(ty) => quote! { #ident: #ty::from_buf(buf.get_buf()), },
+    let raw_fields: Vec<_> = get_field_tuples(s).collect();
+    let decls = raw_fields.iter().map(|(ident, size)| match size {
+        BitSize::Data(n) => quote! { #ident: buf.get_un(#n) },
+        BitSize::Zero(_) => quote! { #ident: PhantomData },
+        BitSize::Vec(..) => quote! { #ident: vec![] },
+    });
+    let assigns = raw_fields.iter().map(|(ident, size)| {
+        if let BitSize::Vec(ty, size) = size {
+            let ty = Ident::new(&ty, ident.span());
+            if size.is_empty() {
+                quote! {{s.#ident = {
+                    let mut vec = vec![];
+                    let buf = buf.get_buf();
+                    while buf.has_remaining() {
+                        vec.push(#ty::from_buf(buf));
+                    }
+                    vec
+                }}}
+            } else {
+                let sz = Ident::new(&size, ident.span());
+                quote! {{s.#ident = {
+                    let mut vec = vec![];
+                    let buf = buf.get_buf();
+                    for _ in 0..s.#sz {
+                        vec.push(#ty::from_buf(buf));
+                    }
+                    vec
+                }}}
+            }
+        } else {
+            quote! {}
+        }
     });
     quote! {
         impl FromBuf for #name {
             fn from_buf(buf: &mut impl ::bytes::Buf) -> Self {
                 let mut buf = Bits::from(buf);
-                Self { #(#fields)* }
+                let mut s = Self { #(#decls,)* };
+                #(#assigns)*
+                s
             }
         }
     }

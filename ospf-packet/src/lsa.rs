@@ -1,6 +1,6 @@
 use crate::bits::*;
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::size_of_val};
 
 use bytes::{Buf, BytesMut};
 use ospf_macros::raw_packet;
@@ -32,14 +32,16 @@ impl ToBytesMut for Lsa {
 impl FromBuf for Lsa {
     fn from_buf(buf: &mut impl Buf) -> Self {
         let header = LsaHeader::from_buf(buf);
+        let mut buf = buf.take(header.length as usize - size_of_val(&header));
         let data = match header.ls_type {
-            types::ROUTER_LSA => LsaData::Router(RouterLSA::from_buf(buf)),
-            types::NETWORK_LSA => LsaData::Network(NetworkLSA::from_buf(buf)),
-            types::SUMMARY_IP_LSA => LsaData::SummaryIP(SummaryLSA::from_buf(buf)),
-            types::SUMMARY_ASBR_LSA => LsaData::SummaryASBR(SummaryLSA::from_buf(buf)),
-            types::AS_EXTERNAL_LSA => LsaData::ASExternal(AsExternalLSA::from_buf(buf)),
+            types::ROUTER_LSA => LsaData::Router(RouterLSA::from_buf(&mut buf)),
+            types::NETWORK_LSA => LsaData::Network(NetworkLSA::from_buf(&mut buf)),
+            types::SUMMARY_IP_LSA => LsaData::SummaryIP(SummaryLSA::from_buf(&mut buf)),
+            types::SUMMARY_ASBR_LSA => LsaData::SummaryASBR(SummaryLSA::from_buf(&mut buf)),
+            types::AS_EXTERNAL_LSA => LsaData::ASExternal(AsExternalLSA::from_buf(&mut buf)),
             _ => panic!("wrong ls type!"),
         };
+        assert!(!buf.has_remaining());
         Self { header, data }
     }
 }
@@ -81,13 +83,14 @@ impl ToBytesMut for LsaData {
 pub struct RouterLSA {
     pub flags: u16,
     pub num_links: u16,
-    pub links: Vec::<RouterLSALink>,
+    #[size(num_links)]
+    pub links: Vec<RouterLSALink>,
 }
 
 #[raw_packet]
 pub struct NetworkLSA {
     pub network_mask: u32,
-    pub attached_routers: Vec::<u32>,
+    pub attached_routers: Vec<u32>,
 }
 
 #[raw_packet]
@@ -103,7 +106,7 @@ pub struct SummaryLSA {
 pub struct AsExternalLSA {
     pub network_mask: u32,
     pub e: u1,
-    _zeros: PhantomData::<u7>,
+    _zeros: PhantomData<u7>,
     pub metric: u24be,
     pub forwarding_address: u32,
     pub external_router_tag: u32,
