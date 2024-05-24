@@ -1,3 +1,4 @@
+mod capture;
 mod constant;
 mod macros;
 
@@ -10,14 +11,14 @@ use pnet::packet::ip::IpNextHeaderProtocols::OspfigP;
 use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
-use pnet::transport::{transport_channel, TransportReceiver, TransportSender};
+use pnet::transport::{transport_channel, TransportSender};
 use tokio::sync::Mutex;
 
 const BROADCAST_ADDR: IpAddr = ipv4!(244, 0, 0, 5);
 
 #[tokio::main()]
 async fn main() {
-    let (tx, rx) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
+    let (tx, _) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
         Ok((tx, rx)) => (tx, rx),
         Err(e) => panic!(
             "An error occurred when creating the transport channel: {}",
@@ -27,7 +28,7 @@ async fn main() {
 
     let tx = Arc::new(Mutex::new(tx));
     let h1 = tokio::spawn(hello(tx.clone()));
-    let h2 = tokio::spawn(recv(rx));
+    let h2 = tokio::spawn(capture::capture(String::from("eth0")));
     h1.await.unwrap();
     h2.await.unwrap();
 }
@@ -66,46 +67,5 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
             Err(e) => panic!("failed to send packet: {}", e),
         }
         tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-}
-
-async fn recv(mut rx: TransportReceiver) {
-    let mut iter = ospf_packet_iter(&mut rx);
-    loop {
-        println!("Waiting for packet...");
-        match iter.next() {
-            Ok((packet, addr)) => {
-                println!("Received a packet from {}: {:?}", addr, packet);
-                match packet.get_message_type() {
-                    packet::types::HELLO_PACKET => {
-                        let hello_packet = packet::HelloPacket::from_buf(&mut packet.payload());
-                        println!("> Hello packet: {:?}", hello_packet);
-                    }
-                    packet::types::DB_DESCRIPTION => {
-                        let db_description = packet::DBDescription::from_buf(&mut packet.payload());
-                        println!("> DB Description packet: {:?}", db_description);
-                    }
-                    packet::types::LS_REQUEST => {
-                        let ls_request = packet::LSRequest::from_buf(&mut packet.payload());
-                        println!("> LS Request packet: {:?}", ls_request);
-                    }
-                    packet::types::LS_UPDATE => {
-                        let ls_update = packet::LSUpdate::from_buf(&mut packet.payload());
-                        println!("> LS Update packet: {:?}", ls_update);
-                    }
-                    packet::types::LS_ACKNOWLEDGE => {
-                        let ls_acknowledge = packet::LSAcknowledge::from_buf(&mut packet.payload());
-                        println!("> LS Acknowledge packet: {:?}", ls_acknowledge);
-                    }
-                    _ => {
-                        println!("> Unknown packet type");
-                    }
-                }
-            }
-            Err(e) => {
-                // If an error occurs, we can handle it here
-                panic!("An error occurred while reading: {}", e);
-            }
-        }
     }
 }
