@@ -7,5 +7,6 @@ edition = "2021"
 bytes = "1.6.*"                           # convenient byte manipulation
 ospf-macros = { path = "../ospf-macros" } # ospf packet macors
 pnet = "0.34.*"                           # raw socket
+pnet_sys = "0.34.*"                       # pnet sys
 pnet_macros = "0.34.*"                    # pnet macros
 pnet_macros_support = "0.34.*"            # pnet macros support
