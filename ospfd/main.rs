@@ -18,6 +18,8 @@ const BROADCAST_ADDR: IpAddr = ipv4!(244, 0, 0, 5);
 
 #[tokio::main()]
 async fn main() {
+    let capture_daemon = capture::CaptureOspfDaemon::new("eth0", capture::echo_handler).unwrap();
+
     let (tx, _) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
         Ok((tx, rx)) => (tx, rx),
         Err(e) => panic!(
@@ -28,14 +30,13 @@ async fn main() {
 
     let tx = Arc::new(Mutex::new(tx));
     let h1 = tokio::spawn(hello(tx.clone()));
-    let h2 = tokio::spawn(capture::capture(String::from("eth0")));
+    let h2 = tokio::spawn(capture_daemon.capture_forever());
     h1.await.unwrap();
     h2.await.unwrap();
 }
 
 async fn hello(tx: Arc<Mutex<TransportSender>>) {
     loop {
-        println!("Sending hello packet...");
         let ospf_hello = Ospf {
             version: 2,
             message_type: packet::types::HELLO_PACKET,
