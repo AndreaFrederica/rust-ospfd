@@ -79,7 +79,7 @@ pub fn generate_from_buf(s: &DataStruct, name: &Ident) -> TokenStream {
     let raw_fields: Vec<_> = get_field_tuples(s).collect();
     let decls = raw_fields.iter().map(|(ident, size)| match size {
         BitSize::Data(n) => quote! { #ident: buf.get_un(#n) },
-        BitSize::Zero(_) => quote! { #ident: PhantomData },
+        BitSize::Zero(n) => quote! { #ident: { let _ = buf.get_un::<u32>(#n); PhantomData } },
         BitSize::Vec(..) => quote! { #ident: vec![] },
     });
     let assigns = raw_fields.iter().map(|(ident, size)| {

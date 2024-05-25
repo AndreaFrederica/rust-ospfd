@@ -11,6 +11,19 @@ pub mod types {
     pub const LS_ACKNOWLEDGE: u8 = 5;
 }
 
+pub mod options {
+    #[doc = "该位描述是否洪泛 AS-external-LSA，在本备忘录的第 3.6、9.5、10.8 和 12.1.2 节中描述。"]
+    pub const E: u8 = 0b0000_0010;
+    #[doc = "该位描述是否按照［引用 18］的说明转发 IP 多播包。"]
+    pub const MC: u8 = 0b0000_0100;
+    #[doc = "该位描述了处理类型 7 LSA，见［引用 19］的说明。"]
+    pub const NP: u8 = 0b0000_1000;
+    #[doc = "该位描述了是否按［引用 20］的说明忽略还是接收并转发 External-Attributes-LSA。"]
+    pub const EA: u8 = 0b0001_0000;
+    #[doc = "该位描述了按［引用 21］的说明处理按需链路。"]
+    pub const DC: u8 = 0b0010_0000;
+}
+
 /// Represents a OSPF Hello Packet.
 #[raw_packet]
 pub struct HelloPacket {

@@ -49,8 +49,8 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
             payload: packet::HelloPacket {
                 network_mask: ip2hex!(255, 255, 255, 0),
                 hello_interval: 10,
-                options: 0,
-                router_priority: 0,
+                options: packet::options::E,
+                router_priority: 1,
                 router_dead_interval: 40,
                 designated_router: ip2hex!(10, 10, 10, 10),
                 backup_designated_router: ip2hex!(0, 0, 0, 0),
@@ -62,6 +62,7 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
         let mut buffer = vec![0; ospf_hello.len()];
         let mut packet = MutableOspfPacket::new(&mut buffer).unwrap();
         packet.populate(&ospf_hello);
+        packet.auto_set_checksum();
         let len = packet.packet().len();
         match tx.lock().await.send_to(packet, BROADCAST_ADDR) {
             Ok(n) => assert_eq!(n, len),
