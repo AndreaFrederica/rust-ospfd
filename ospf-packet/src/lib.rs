@@ -63,4 +63,20 @@ impl OspfPacket<'_> {
     }
 }
 
+impl From<OspfPacket<'_>> for Ospf {
+    fn from(value: OspfPacket<'_>) -> Self {
+        Self {
+            version: value.get_version(),
+            message_type: value.get_message_type(),
+            length: value.get_length(),
+            router_id: value.get_router_id(),
+            area_id: value.get_area_id(),
+            checksum: value.get_checksum(),
+            au_type: value.get_au_type(),
+            authentication: value.get_authentication(),
+            payload: value.payload().to_vec(), 
+        }
+    }
+}
+
 transport_channel_iterator!(OspfPacket, OspfTransportChannelIterator, ospf_packet_iter);

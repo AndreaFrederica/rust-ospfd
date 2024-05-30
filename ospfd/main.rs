@@ -1,6 +1,9 @@
 mod capture;
 mod constant;
+mod handler;
+mod interface;
 mod logging;
+mod router;
 mod util;
 
 use std::sync::Arc;
@@ -13,11 +16,19 @@ use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{transport_channel, TransportSender};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 #[tokio::main()]
 async fn main() {
-    let capture_daemon = capture::CaptureOspfDaemon::new("eth0", capture::echo_handler).unwrap();
+    let router = router::Router::new(hex!(10, 10, 1, 50));
+    let interface = interface::Interface::new(router);
+    let (hello_tx, _hello_rx) = mpsc::channel(4);
+    let (dd_tx, _dd_rx) = mpsc::channel(4);
+    let (lsr_tx, _lsr_rx) = mpsc::channel(4);
+    let (lsu_tx, _lsu_rx) = mpsc::channel(4);
+    let (ack_tx, _ack_rx) = mpsc::channel(4);
+    let ospf_handler = handler::ospf_handler_maker(interface, hello_tx, dd_tx, lsr_tx, lsu_tx, ack_tx);
+    let capture_daemon = capture::CaptureOspfDaemon::new("eth0", ospf_handler).unwrap();
 
     let (tx, _) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
         Ok((tx, rx)) => (tx, rx),

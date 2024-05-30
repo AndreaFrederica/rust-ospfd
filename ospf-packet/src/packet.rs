@@ -1,6 +1,10 @@
+use std::fmt::Display;
+use std::net::Ipv4Addr;
+
 use super::bits::*;
 use super::lsa::*;
 
+use bytes::Buf;
 use ospf_macros::raw_packet;
 
 pub mod types {
@@ -68,6 +72,45 @@ pub struct LSUpdate {
 pub struct LSAcknowledge {
     pub lsa_header: Vec<LsaHeader>,
 }
+
+#[derive(Debug, Clone)]
+pub struct AddressedPacket<T> {
+    pub source: Ipv4Addr,
+    pub destination: Ipv4Addr,
+    pub packet: T,
+}
+
+impl<T> AddressedPacket<T> {
+    pub fn new(source: Ipv4Addr, destination: Ipv4Addr, packet: T) -> Self {
+        Self {
+            source,
+            destination,
+            packet,
+        }
+    }
+}
+
+impl<T: FromBuf> AddressedPacket<T> {
+    pub fn from_payload(source: Ipv4Addr, destination: Ipv4Addr, payload: &mut impl Buf) -> Self {
+        Self::new(source, destination, T::from_buf(payload))
+    }
+}
+
+impl<T: std::fmt::Debug> Display for AddressedPacket<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} -> {}\n{:#x?}",
+            self.source, self.destination, self.packet
+        )
+    }
+}
+
+pub type AddressedHelloPacket = AddressedPacket<HelloPacket>;
+pub type AddressedDBDescription = AddressedPacket<DBDescription>;
+pub type AddressedLSRequest = AddressedPacket<LSRequest>;
+pub type AddressedLSUpdate = AddressedPacket<LSUpdate>;
+pub type AddressedLSAcknowledge = AddressedPacket<LSAcknowledge>;
 
 #[cfg(test)]
 mod test {

@@ -13,5 +13,7 @@ pub const DefaultDestination: u32 = 0;
 pub const InitialSequenceNumber: i32 = -0x7fffffff;
 pub const MaxSequenceNumber: i32 = 0x7fffffff;
 
-pub const AllSPFRouters: Ipv4Addr = Ipv4Addr::new(244, 0, 0, 5);
+pub const AllSPFRouters: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 5);
 pub const AllDRouters: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 6);
+
+pub const BackboneArea: u32 = 0;

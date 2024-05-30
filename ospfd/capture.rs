@@ -14,7 +14,7 @@ use pnet::packet::Packet; // 导入数据包trait
 use tokio::sync::Mutex;
 
 use crate::constant::{AllDRouters, AllSPFRouters};
-use crate::log_success;
+use crate::{log, log_success};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
@@ -26,8 +26,8 @@ pub enum ChannelError {
     IoError(#[from] std::io::Error),
 }
 
-type Receiver = Box<(dyn DataLinkReceiver + 'static)>;
-type OspfHandler = Box<dyn FnMut(Ipv4Addr, Ipv4Addr, OspfPacket) + Send>;
+pub type Receiver = Box<(dyn DataLinkReceiver + 'static)>;
+pub type OspfHandler = Box<dyn FnMut(Ipv4Addr, Ipv4Addr, OspfPacket) + Send>;
 
 #[doc = "CaptureOspfDaemon: OSPF数据包捕获守护协程"]
 pub struct CaptureOspfDaemon {
@@ -138,34 +138,34 @@ impl CaptureOspfDaemon {
 #[allow(unused)]
 #[doc = "打印接收到的数据包"]
 pub fn echo_handler(source: Ipv4Addr, destination: Ipv4Addr, packet: OspfPacket) {
-    println!(
-        "Received OSPF packet ({} -> {}): {:?}",
+    log!(
+        "Received OSPF packet ({} -> {}): {:x?}",
         source, destination, packet
     );
     match packet.get_message_type() {
         packet::types::HELLO_PACKET => {
             let hello_packet = packet::HelloPacket::from_buf(&mut packet.payload());
-            println!("> Hello packet: {:?}", hello_packet);
+            log!("> Hello packet: {:x?}", hello_packet);
         }
         packet::types::DB_DESCRIPTION => {
             let db_description = packet::DBDescription::from_buf(&mut packet.payload());
-            println!("> DB Description packet: {:?}", db_description);
+            log!("> DB Description packet: {:x?}", db_description);
         }
         packet::types::LS_REQUEST => {
             let ls_request = packet::LSRequest::from_buf(&mut packet.payload());
-            println!("> LS Request packet: {:?}", ls_request);
+            log!("> LS Request packet: {:x?}", ls_request);
         }
         packet::types::LS_UPDATE => {
             let ls_update = packet::LSUpdate::from_buf(&mut packet.payload());
-            println!("> LS Update packet: {:?}", ls_update);
+            log!("> LS Update packet: {:x?}", ls_update);
         }
         packet::types::LS_ACKNOWLEDGE => {
             let ls_acknowledge = packet::LSAcknowledge::from_buf(&mut packet.payload());
-            println!("> LS Acknowledge packet: {:?}", ls_acknowledge);
+            log!("> LS Acknowledge packet: {:x?}", ls_acknowledge);
         }
         _ => {
-            println!("> Unknown packet type");
+            log!("> Unknown packet type");
         }
     }
-    println!("");
+    log!("");
 }
