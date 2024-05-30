@@ -1,11 +1,12 @@
 mod capture;
 mod constant;
-mod macros;
+mod logging;
+mod util;
 
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use constant::AllSPFRouters;
 use ospf_packet::*;
 use pnet::packet::ip::IpNextHeaderProtocols::OspfigP;
 use pnet::packet::Packet;
@@ -13,8 +14,6 @@ use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{transport_channel, TransportSender};
 use tokio::sync::Mutex;
-
-const BROADCAST_ADDR: IpAddr = ipv4!(244, 0, 0, 5);
 
 #[tokio::main()]
 async fn main() {
@@ -41,19 +40,19 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
             version: 2,
             message_type: packet::types::HELLO_PACKET,
             length: 44,
-            router_id: ip2hex!(10, 10, 10, 10),
-            area_id: ip2hex!(0, 0, 0, 0),
+            router_id: hex!(10, 10, 10, 10),
+            area_id: hex!(0, 0, 0, 0),
             checksum: 0,
             au_type: 0,
             authentication: 0,
             payload: packet::HelloPacket {
-                network_mask: ip2hex!(255, 255, 255, 0),
+                network_mask: hex!(255, 255, 255, 0),
                 hello_interval: 10,
                 options: packet::options::E,
                 router_priority: 1,
                 router_dead_interval: 40,
-                designated_router: ip2hex!(10, 10, 10, 10),
-                backup_designated_router: ip2hex!(0, 0, 0, 0),
+                designated_router: hex!(10, 10, 10, 10),
+                backup_designated_router: hex!(0, 0, 0, 0),
                 neighbors: vec![],
             }
             .to_bytes()
@@ -64,7 +63,7 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
         packet.populate(&ospf_hello);
         packet.auto_set_checksum();
         let len = packet.packet().len();
-        match tx.lock().await.send_to(packet, BROADCAST_ADDR) {
+        match tx.lock().await.send_to(packet, ip!(AllSPFRouters)) {
             Ok(n) => assert_eq!(n, len),
             Err(e) => panic!("failed to send packet: {}", e),
         }

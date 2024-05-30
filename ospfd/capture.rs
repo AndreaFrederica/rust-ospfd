@@ -1,7 +1,7 @@
 // thanks to https://zhuanlan.zhihu.com/p/677131879
 
 use core::panic;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 use ospf_packet::{packet, FromBuf, OspfPacket};
@@ -10,8 +10,11 @@ use pnet::datalink::{self, DataLinkReceiver}; // 导入datalink模块中的相�
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket}; // 导入以太网数据包相关项
 use pnet::packet::ip::IpNextHeaderProtocols; // 导入IP协议相关项
 use pnet::packet::ipv4::Ipv4Packet; // 导入IPv4数据包相关项
-use pnet::packet::Packet;
-use tokio::sync::Mutex; // 导入数据包trait
+use pnet::packet::Packet; // 导入数据包trait
+use tokio::sync::Mutex;
+
+use crate::constant::{AllDRouters, AllSPFRouters};
+use crate::log_success;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
@@ -28,6 +31,7 @@ type OspfHandler = Box<dyn FnMut(Ipv4Addr, Ipv4Addr, OspfPacket) + Send>;
 
 #[doc = "CaptureOspfDaemon: OSPF数据包捕获守护协程"]
 pub struct CaptureOspfDaemon {
+    ips: Vec<Ipv4Addr>,
     receiver: Receiver,
     handler: OspfHandler,
 }
@@ -45,6 +49,19 @@ impl CaptureOspfDaemon {
             .next()
             .ok_or(ChannelError::InterfaceNotFound(interface_name.to_string()))?;
 
+        let ips = interface
+            .ips
+            .iter()
+            .filter_map(|ip| {
+                if let IpAddr::V4(ip) = ip.ip() {
+                    Some(ip)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        log_success!("listening on {} ({:?})", interface.name, ips);
+
         let (_, receiver) = match datalink::channel(&interface, Default::default()) {
             // 创建数据链路层通道，用于接收和发送数据包
             Ok(Ethernet(tx, rx)) => (tx, rx), // 如果通道类型是以太网通道，则将发送和接收通道分别赋值给_tx和rx
@@ -52,16 +69,30 @@ impl CaptureOspfDaemon {
             Err(e) => return Err(e.into()),   // 如果创建通道时发生错误，打印错误消息并退出
         };
 
-        Ok(Self { receiver, handler })
+        Ok(Self {
+            ips,
+            receiver,
+            handler,
+        })
     }
 
-    fn handle_packet(handler: &mut OspfHandler, ethernet: &EthernetPacket) {
+    fn check_ip(ips: &Vec<Ipv4Addr>, ip: Ipv4Addr) -> bool {
+        ip == AllSPFRouters || ip == AllDRouters || ips.iter().any(|&i| i == ip)
+    }
+
+    fn handle_packet(ips: &Vec<Ipv4Addr>, handler: &mut OspfHandler, ethernet: &EthernetPacket) {
         // 对Ipv4的包按层解析
         match ethernet.get_ethertype() {
             EtherTypes::Ipv4 => {
                 // 如果是IPv4数据包
                 let header = Ipv4Packet::new(ethernet.payload()); // 解析IPv4头部
                 if let Some(header) = header {
+                    if Self::check_ip(ips, header.get_source()) {
+                        return;
+                    } // 不能是自己发出的
+                    if !Self::check_ip(ips, header.get_destination()) {
+                        return;
+                    } // 不能是不发给自己的
                     match header.get_next_level_protocol() {
                         IpNextHeaderProtocols::OspfigP => {
                             // 如果是OSPF协议
@@ -69,7 +100,7 @@ impl CaptureOspfDaemon {
                                 OspfPacket::new(header.payload()).expect("Bad Ospf Packet");
                             handler(header.get_source(), header.get_destination(), packet);
                         }
-                        _ => (), // 忽略其他非TCP协议
+                        _ => (), // 忽略其他协议
                     }
                 }
             }
@@ -83,7 +114,7 @@ impl CaptureOspfDaemon {
         match self.receiver.next() {
             Ok(packet) => {
                 let packet = EthernetPacket::new(packet).expect("Bad Ethernet Packet"); // 解析以太网数据包
-                Self::handle_packet(&mut self.handler, &packet); // 处理接收到的数据包
+                Self::handle_packet(&self.ips, &mut self.handler, &packet); // 处理接收到的数据包
             }
             Err(e) => {
                 panic!("An error occurred while reading: {}", e); // 如果读取数据包时发生错误，打印错误消息并退出
@@ -98,12 +129,13 @@ impl CaptureOspfDaemon {
             let daemon = daemon.clone();
             let hd = tokio::task::spawn(async move { daemon.lock().await.capture_once() });
             if hd.await.is_err() {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         }
     }
 }
 
+#[allow(unused)]
 #[doc = "打印接收到的数据包"]
 pub fn echo_handler(source: Ipv4Addr, destination: Ipv4Addr, packet: OspfPacket) {
     println!(
