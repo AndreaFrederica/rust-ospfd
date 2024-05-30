@@ -8,6 +8,7 @@ pub struct Router {
     pub router_state: RState,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RType {
     DR,

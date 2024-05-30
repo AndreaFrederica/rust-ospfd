@@ -1,5 +1,6 @@
 mod capture;
 mod constant;
+mod daemon;
 mod handler;
 mod interface;
 mod logging;
@@ -9,26 +10,27 @@ mod util;
 use std::sync::Arc;
 use std::time::Duration;
 
-use constant::AllSPFRouters;
+use constant::{AllSPFRouters, BackboneArea};
+use daemon::Daemon;
+use interface::Interface;
 use ospf_packet::*;
 use pnet::packet::ip::IpNextHeaderProtocols::OspfigP;
 use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{transport_channel, TransportSender};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::RwLock;
 
 #[tokio::main()]
 async fn main() {
     let router = router::Router::new(hex!(10, 10, 1, 50));
     let interface = interface::Interface::new(router);
-    let (hello_tx, _hello_rx) = mpsc::channel(4);
-    let (dd_tx, _dd_rx) = mpsc::channel(4);
-    let (lsr_tx, _lsr_rx) = mpsc::channel(4);
-    let (lsu_tx, _lsu_rx) = mpsc::channel(4);
-    let (ack_tx, _ack_rx) = mpsc::channel(4);
-    let ospf_handler = handler::ospf_handler_maker(interface, hello_tx, dd_tx, lsr_tx, lsu_tx, ack_tx);
+    let (tx, rx) = handler::channel(4);
+    let ospf_handler = handler::ospf_handler_maker(interface.clone(), tx);
     let capture_daemon = capture::CaptureOspfDaemon::new("eth0", ospf_handler).unwrap();
+
+    let hello_hd = handler::hello::HelloHandler::new(interface.clone(), rx.hello_rx);
+    tokio::spawn(hello_hd.run_forever());
 
     let (tx, _) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
         Ok((tx, rx)) => (tx, rx),
@@ -38,21 +40,22 @@ async fn main() {
         ),
     };
 
-    let tx = Arc::new(Mutex::new(tx));
-    let h1 = tokio::spawn(hello(tx.clone()));
-    let h2 = tokio::spawn(capture_daemon.capture_forever());
+    let h1 = tokio::spawn(hello(interface, tx));
+    let h2 = tokio::spawn(capture_daemon.run_forever());
     h1.await.unwrap();
     h2.await.unwrap();
 }
 
-async fn hello(tx: Arc<Mutex<TransportSender>>) {
+async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
     loop {
+        let router_id = interface.read().await.router.read().await.router_id;
+        let neighbors = interface.read().await.neighbors.clone();
         let ospf_hello = Ospf {
             version: 2,
             message_type: packet::types::HELLO_PACKET,
-            length: 44,
-            router_id: hex!(10, 10, 10, 10),
-            area_id: hex!(0, 0, 0, 0),
+            length: 0,
+            router_id,
+            area_id: BackboneArea,
             checksum: 0,
             au_type: 0,
             authentication: 0,
@@ -62,9 +65,9 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
                 options: packet::options::E,
                 router_priority: 1,
                 router_dead_interval: 40,
-                designated_router: hex!(10, 10, 10, 10),
+                designated_router: router_id,
                 backup_designated_router: hex!(0, 0, 0, 0),
-                neighbors: vec![],
+                neighbors,
             }
             .to_bytes()
             .to_vec(),
@@ -72,9 +75,10 @@ async fn hello(tx: Arc<Mutex<TransportSender>>) {
         let mut buffer = vec![0; ospf_hello.len()];
         let mut packet = MutableOspfPacket::new(&mut buffer).unwrap();
         packet.populate(&ospf_hello);
+        packet.set_length(packet.packet().len() as u16);
         packet.auto_set_checksum();
         let len = packet.packet().len();
-        match tx.lock().await.send_to(packet, ip!(AllSPFRouters)) {
+        match tx.send_to(packet, ip!(AllSPFRouters)) {
             Ok(n) => assert_eq!(n, len),
             Err(e) => panic!("failed to send packet: {}", e),
         }

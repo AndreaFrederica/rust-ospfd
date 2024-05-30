@@ -1,8 +1,6 @@
 // thanks to https://zhuanlan.zhihu.com/p/677131879
 
-use core::panic;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
 
 use ospf_packet::{packet, FromBuf, OspfPacket};
 use pnet::datalink::Channel::Ethernet; // 导入以太网通道
@@ -11,10 +9,10 @@ use pnet::packet::ethernet::{EtherTypes, EthernetPacket}; // 导入以太网数�
 use pnet::packet::ip::IpNextHeaderProtocols; // 导入IP协议相关项
 use pnet::packet::ipv4::Ipv4Packet; // 导入IPv4数据包相关项
 use pnet::packet::Packet; // 导入数据包trait
-use tokio::sync::Mutex;
 
 use crate::constant::{AllDRouters, AllSPFRouters};
-use crate::{log, log_success};
+use crate::daemon::Runnable;
+use crate::{log, log_error, log_success};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
@@ -107,29 +105,18 @@ impl CaptureOspfDaemon {
             _ => (), // 忽略非IPv4数据包
         }
     }
+}
 
-    #[doc = "捕获一个数据包，可能会panic"]
-    pub fn capture_once(&mut self) {
-        // 获取收到的包
+impl Runnable for CaptureOspfDaemon {
+    fn run(&mut self) {
         match self.receiver.next() {
             Ok(packet) => {
                 let packet = EthernetPacket::new(packet).expect("Bad Ethernet Packet"); // 解析以太网数据包
                 Self::handle_packet(&self.ips, &mut self.handler, &packet); // 处理接收到的数据包
             }
             Err(e) => {
-                panic!("An error occurred while reading: {}", e); // 如果读取数据包时发生错误，打印错误消息并退出
-            }
-        }
-    }
-
-    #[doc = "永无止境地捕获数据包，不可能panic"]
-    pub async fn capture_forever(self) {
-        let daemon = Arc::new(Mutex::new(self));
-        loop {
-            let daemon = daemon.clone();
-            let hd = tokio::task::spawn(async move { daemon.lock().await.capture_once() });
-            if hd.await.is_err() {
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                // 如果读取数据包时发生错误，打印错误消息
+                log_error!("An error occurred while reading: {}", e);
             }
         }
     }

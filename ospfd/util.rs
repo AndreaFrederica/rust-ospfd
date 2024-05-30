@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::net::Ipv4Addr;
 
 #[macro_export]

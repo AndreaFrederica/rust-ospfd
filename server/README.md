@@ -14,3 +14,9 @@ Docker 虚拟机模板配置方式也可以从官网找到（设置网络设备�
 2. 在 GNS3 服务器上使用 `sudo ./sync.sh` 将可执行文件同步到 docker 容器中（如果容器已经直接启动 ospfd 服务，则需要先关停）
 
 注意：`sync.sh` 很简陋，所以如果 GNS3 服务器上有很多 Volume 大概会传错地方，所以请自行修改。
+
+## wsl 连接 hyper-v 虚拟机指南
+
+https://automatingops.com/allowing-windows-subsystem-for-linux-to-communicate-with-hyper-v-vms
+
+省流：打开交换机转发

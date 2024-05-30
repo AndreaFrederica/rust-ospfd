@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use std::net::Ipv4Addr;
 
 use super::bits::*;
@@ -75,34 +74,24 @@ pub struct LSAcknowledge {
 
 #[derive(Debug, Clone)]
 pub struct AddressedPacket<T> {
-    pub source: Ipv4Addr,
-    pub destination: Ipv4Addr,
+    pub ip_addr: Ipv4Addr,
+    pub router_id: u32,
     pub packet: T,
 }
 
 impl<T> AddressedPacket<T> {
-    pub fn new(source: Ipv4Addr, destination: Ipv4Addr, packet: T) -> Self {
+    pub fn new(ip_addr: Ipv4Addr, router_id: u32, packet: T) -> Self {
         Self {
-            source,
-            destination,
+            ip_addr,
+            router_id,
             packet,
         }
     }
 }
 
 impl<T: FromBuf> AddressedPacket<T> {
-    pub fn from_payload(source: Ipv4Addr, destination: Ipv4Addr, payload: &mut impl Buf) -> Self {
-        Self::new(source, destination, T::from_buf(payload))
-    }
-}
-
-impl<T: std::fmt::Debug> Display for AddressedPacket<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} -> {}\n{:#x?}",
-            self.source, self.destination, self.packet
-        )
+    pub fn from_payload(ip_addr: Ipv4Addr, router_id: u32, payload: &mut impl Buf) -> Self {
+        Self::new(ip_addr, router_id, T::from_buf(payload))
     }
 }
 

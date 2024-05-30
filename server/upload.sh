@@ -8,4 +8,4 @@ cargo build
 sshpass -p gns3 scp target/debug/ospfd gns3@$1:ospfd/ospfd-debug
 
 cargo build -r
-sshpass -p gns3 scp target/debug/ospfd gns3@$1:ospfd/ospfd
+sshpass -p gns3 scp target/release/ospfd gns3@$1:ospfd/ospfd
