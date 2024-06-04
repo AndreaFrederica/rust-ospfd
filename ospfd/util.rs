@@ -12,7 +12,7 @@ macro_rules! ip {
 #[macro_export]
 macro_rules! hex {
     ($a:expr, $b:expr, $c:expr, $d:expr) => {
-        ($a as u32) << 24 | ($b as u32) << 16 | ($c as u32) << 8 | ($d as u32)
+        u32::from_be_bytes([$a, $b, $c, $d])
     };
 }
 
@@ -32,7 +32,7 @@ mod test {
 
     #[test]
     fn test() {
-        assert_eq!(ip2hex(AllSPFRouters), 0xf4000005);
-        assert_eq!(hex2ip(0xf4000005), AllSPFRouters);
+        assert_eq!(ip2hex(AllSPFRouters), 0xe0000005u32);
+        assert_eq!(hex2ip(0xe0000005u32), AllSPFRouters);
     }
 }
