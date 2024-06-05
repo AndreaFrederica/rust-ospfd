@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 pub trait ToBytesMut {
@@ -27,6 +29,7 @@ impl<T: ToBytes> ToBytesMut for Vec<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct Bits<T: Buf> {
     buf: T,
     bit: u8,
@@ -74,6 +77,7 @@ impl<T: Buf> From<T> for Bits<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct BitsMut {
     buf: BytesMut,
     bit: u8,
@@ -119,6 +123,22 @@ impl BitsMut {
 impl From<BitsMut> for BytesMut {
     fn from(value: BitsMut) -> Self {
         value.buf
+    }
+}
+
+impl ToBytesMut for Ipv4Addr {
+    fn to_bytes_mut(&self) -> BytesMut {
+        BytesMut::from(self.octets().as_slice())
+    }
+}
+
+impl FromBuf for Ipv4Addr {
+    fn from_buf(buf: &mut impl Buf) -> Self {
+        let a = buf.get_u8();
+        let b = buf.get_u8();
+        let c = buf.get_u8();
+        let d = buf.get_u8();
+        Ipv4Addr::new(a, b, c, d)
     }
 }
 

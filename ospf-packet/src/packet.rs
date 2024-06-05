@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use super::bits::*;
 use super::lsa::*;
 
@@ -28,14 +30,14 @@ pub mod options {
 /// Represents a OSPF Hello Packet.
 #[raw_packet]
 pub struct HelloPacket {
-    pub network_mask: u32,
+    pub network_mask: Ipv4Addr,
     pub hello_interval: u16,
     pub options: u8,
     pub router_priority: u8,
     pub router_dead_interval: u32,
-    pub designated_router: u32,
-    pub backup_designated_router: u32,
-    pub neighbors: Vec<u32>,
+    pub designated_router: Ipv4Addr,
+    pub backup_designated_router: Ipv4Addr,
+    pub neighbors: Vec<Ipv4Addr>,
 }
 
 /// Represents a OSPF Database Description Packet.
@@ -53,7 +55,7 @@ pub struct DBDescription {
 pub struct LSRequest {
     pub ls_type: u32,
     pub ls_id: u32,
-    pub advertising_router: u32,
+    pub advertising_router: Ipv4Addr,
 }
 
 /// Represents a OSPF Link State Update Packet.
@@ -102,7 +104,7 @@ mod test {
                     options: 0x0002,
                     ls_type: lsa::types::ROUTER_LSA,
                     link_state_id: 0x04040404,
-                    advertising_router: 0x04040404,
+                    advertising_router: Ipv4Addr::new(4, 5, 6, 7),
                     ls_sequence_number: 0x8000000b,
                     ls_checksum: 0xe6c8,
                     length: 48,
@@ -112,15 +114,15 @@ mod test {
                     num_links: 2,
                     links: vec![
                         RouterLSALink {
-                            link_id: 0x04040404,
-                            link_data: 0xffffffff,
+                            link_id: Ipv4Addr::new(4, 5, 6, 7),
+                            link_data: Ipv4Addr::new(255, 255, 255, 255),
                             link_type: 3,
                             tos: 0,
                             metric: 0,
                         },
                         RouterLSALink {
-                            link_id: 0xa8010102,
-                            link_data: 0xa8010102,
+                            link_id: Ipv4Addr::new(168, 1, 1, 2),
+                            link_data: Ipv4Addr::new(168, 1, 1, 2),
                             link_type: 2,
                             tos: 0,
                             metric: 1,
@@ -129,6 +131,6 @@ mod test {
                 }),
             }],
         };
-        assert_eq!(ls_update.to_bytes().to_vec(), raw_hex!("00000001000a020104040404040404048000000be6c800300000000204040404ffffffff03000000a8010102a801010202000001"));
+        assert_eq!(ls_update.to_bytes().to_vec(), raw_hex!("00000001000a020104040404040506078000000be6c800300000000204050607ffffffff03000000a8010102a801010202000001"));
     }
 }

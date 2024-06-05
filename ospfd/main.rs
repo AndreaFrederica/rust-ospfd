@@ -8,6 +8,7 @@ mod neighbor;
 mod types;
 mod util;
 
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -52,13 +53,7 @@ async fn main() {
 async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
     loop {
         let router_id = interface.read().await.router_id;
-        let neighbors = interface
-            .read()
-            .await
-            .neighbors
-            .iter()
-            .map(|&ip| ip2hex(ip))
-            .collect();
+        let neighbors = interface.read().await.neighbors.clone();
         let ospf_hello = Ospf {
             version: 2,
             message_type: packet::types::HELLO_PACKET,
@@ -69,13 +64,13 @@ async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
             au_type: 0,
             authentication: 0,
             payload: packet::HelloPacket {
-                network_mask: hex!(255, 255, 255, 0),
+                network_mask: Ipv4Addr::new(255, 255, 255, 0),
                 hello_interval: 10,
                 options: packet::options::E,
                 router_priority: 1,
                 router_dead_interval: 40,
-                designated_router: ip2hex(interface.read().await.ip_addr),
-                backup_designated_router: hex!(0, 0, 0, 0),
+                designated_router: interface.read().await.ip_addr,
+                backup_designated_router: Ipv4Addr::new(0, 0, 0, 0),
                 neighbors,
             }
             .to_bytes()
@@ -87,7 +82,7 @@ async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
         packet.set_length(packet.packet().len() as u16);
         packet.auto_set_checksum();
         let len = packet.packet().len();
-        match tx.send_to(packet, ip!(AllSPFRouters)) {
+        match tx.send_to(packet, IpAddr::V4(AllSPFRouters)) {
             Ok(n) => assert_eq!(n, len),
             Err(e) => panic!("failed to send packet: {}", e),
         }

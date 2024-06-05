@@ -1,6 +1,6 @@
 use crate::bits::*;
 
-use std::{marker::PhantomData, mem::size_of_val};
+use std::{marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
 
 use bytes::{Buf, BytesMut};
 use ospf_macros::raw_packet;
@@ -52,7 +52,7 @@ pub struct LsaHeader {
     pub options: u8,
     pub ls_type: u8,
     pub link_state_id: u32,
-    pub advertising_router: u32,
+    pub advertising_router: Ipv4Addr,
     pub ls_sequence_number: u32,
     pub ls_checksum: u16,
     pub length: u16,
@@ -89,13 +89,13 @@ pub struct RouterLSA {
 
 #[raw_packet]
 pub struct NetworkLSA {
-    pub network_mask: u32,
-    pub attached_routers: Vec<u32>,
+    pub network_mask: Ipv4Addr,
+    pub attached_routers: Vec<Ipv4Addr>,
 }
 
 #[raw_packet]
 pub struct SummaryLSA {
-    pub network_mask: u32,
+    pub network_mask: Ipv4Addr,
     _zeros: PhantomData<u8>,
     pub metric: u24be,
     pub tos: u8,
@@ -104,18 +104,18 @@ pub struct SummaryLSA {
 
 #[raw_packet]
 pub struct AsExternalLSA {
-    pub network_mask: u32,
+    pub network_mask: Ipv4Addr,
     pub e: u1,
     _zeros: PhantomData<u7>,
     pub metric: u24be,
-    pub forwarding_address: u32,
+    pub forwarding_address: Ipv4Addr,
     pub external_router_tag: u32,
 }
 
 #[raw_packet]
 pub struct RouterLSALink {
-    pub link_id: u32,
-    pub link_data: u32,
+    pub link_id: Ipv4Addr,
+    pub link_data: Ipv4Addr,
     pub link_type: u8,
     pub tos: u8,
     pub metric: u16,

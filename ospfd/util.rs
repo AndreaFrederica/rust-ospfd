@@ -1,20 +1,4 @@
-#![allow(unused)]
-
 use std::net::Ipv4Addr;
-
-#[macro_export]
-macro_rules! ip {
-    ($x:expr) => {
-        std::net::IpAddr::V4($x)
-    };
-}
-
-#[macro_export]
-macro_rules! hex {
-    ($a:expr, $b:expr, $c:expr, $d:expr) => {
-        u32::from_be_bytes([$a, $b, $c, $d])
-    };
-}
 
 pub const fn ip2hex(ip: Ipv4Addr) -> u32 {
     u32::from_be_bytes(ip.octets())

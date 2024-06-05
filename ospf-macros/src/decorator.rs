@@ -9,6 +9,7 @@ enum BitSize {
     Data(u32),
     Zero(u32),
     Vec(String, String),
+    Ipv4,
 }
 
 fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
@@ -54,6 +55,9 @@ fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
         if let Some(caps) = vec_r.captures(&ty) {
             return (ident, BitSize::Vec(caps[1].to_string(), attr));
         }
+        if ty.contains("Ipv4Addr") {
+            return (ident, BitSize::Ipv4);
+        }
         panic!("Unsupported type {}", ty);
     })
 }
@@ -63,6 +67,7 @@ pub fn generate_to_bytes(s: &DataStruct, name: &Ident) -> TokenStream {
         BitSize::Data(n) => quote! { buf.put_un(self.#ident, #n); },
         BitSize::Zero(n) => quote! { buf.put_un(0u32, #n); },
         BitSize::Vec(..) => quote! { buf.extend_from_slice(&self.#ident.to_bytes()); },
+        BitSize::Ipv4 => quote! { buf.extend_from_slice(self.#ident.octets().as_slice()); },
     });
     quote! {
         impl ToBytesMut for #name {
@@ -81,6 +86,7 @@ pub fn generate_from_buf(s: &DataStruct, name: &Ident) -> TokenStream {
         BitSize::Data(n) => quote! { #ident: buf.get_un(#n) },
         BitSize::Zero(n) => quote! { #ident: { let _ = buf.get_un::<u32>(#n); PhantomData } },
         BitSize::Vec(..) => quote! { #ident: vec![] },
+        BitSize::Ipv4 => quote! { #ident: ::std::net::Ipv4Addr::from_buf(buf.get_buf()) },
     });
     let assigns = raw_fields.iter().map(|(ident, size)| {
         if let BitSize::Vec(ty, size) = size {
