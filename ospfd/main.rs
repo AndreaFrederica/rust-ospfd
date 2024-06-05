@@ -4,7 +4,8 @@ mod daemon;
 mod handler;
 mod interface;
 mod logging;
-mod router;
+mod neighbor;
+mod types;
 mod util;
 
 use std::sync::Arc;
@@ -14,23 +15,25 @@ use constant::{AllSPFRouters, BackboneArea};
 use daemon::Daemon;
 use interface::Interface;
 use ospf_packet::*;
+use pnet::datalink;
 use pnet::packet::ip::IpNextHeaderProtocols::OspfigP;
 use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{transport_channel, TransportSender};
 use tokio::sync::RwLock;
+use util::ip2hex;
 
 #[tokio::main()]
 async fn main() {
-    let router = router::Router::new(hex!(10, 10, 1, 50));
-    let interface = interface::Interface::new(router);
-    let (tx, rx) = handler::channel(4);
-    let ospf_handler = handler::ospf_handler_maker(interface.clone(), tx);
-    let capture_daemon = capture::CaptureOspfDaemon::new("eth0", ospf_handler).unwrap();
-
-    let hello_hd = handler::hello::HelloHandler::new(interface.clone(), rx.hello_rx);
-    tokio::spawn(hello_hd.run_forever());
+    let iface = datalink::interfaces()
+        .into_iter()
+        .filter(|i| i.name == "eth0")
+        .next()
+        .expect("There is no interface named eth0");
+    let interface = interface::Interface::from(&iface);
+    let ospf_handler = handler::ospf_handler_maker(interface.clone());
+    let capture_daemon = capture::CaptureOspfDaemon::new(&iface, ospf_handler).unwrap();
 
     let (tx, _) = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
         Ok((tx, rx)) => (tx, rx),
@@ -48,13 +51,19 @@ async fn main() {
 
 async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
     loop {
-        let router_id = interface.read().await.router.read().await.router_id;
-        let neighbors = interface.read().await.neighbors.clone();
+        let router_id = interface.read().await.router_id;
+        let neighbors = interface
+            .read()
+            .await
+            .neighbors
+            .iter()
+            .map(|&ip| ip2hex(ip))
+            .collect();
         let ospf_hello = Ospf {
             version: 2,
             message_type: packet::types::HELLO_PACKET,
             length: 0,
-            router_id,
+            router_id: ip2hex(router_id),
             area_id: BackboneArea,
             checksum: 0,
             au_type: 0,
@@ -65,7 +74,7 @@ async fn hello(interface: Arc<RwLock<Interface>>, mut tx: TransportSender) {
                 options: packet::options::E,
                 router_priority: 1,
                 router_dead_interval: 40,
-                designated_router: router_id,
+                designated_router: ip2hex(interface.read().await.ip_addr),
                 backup_designated_router: hex!(0, 0, 0, 0),
                 neighbors,
             }

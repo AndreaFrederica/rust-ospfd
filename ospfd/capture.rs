@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use ospf_packet::{packet, FromBuf, OspfPacket};
 use pnet::datalink::Channel::Ethernet; // 导入以太网通道
-use pnet::datalink::{self, DataLinkReceiver}; // 导入datalink模块中的相关项
+use pnet::datalink::{self, DataLinkReceiver, NetworkInterface}; // 导入datalink模块中的相关项
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket}; // 导入以太网数据包相关项
 use pnet::packet::ip::IpNextHeaderProtocols; // 导入IP协议相关项
 use pnet::packet::ipv4::Ipv4Packet; // 导入IPv4数据包相关项
@@ -16,8 +16,6 @@ use crate::{log, log_error, log_success};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
-    #[error("Interface not found: {0}")]
-    InterfaceNotFound(String),
     #[error("Unhandled channel type")]
     BadChannelType,
     #[error("IO Error: {0}")]
@@ -36,18 +34,12 @@ pub struct CaptureOspfDaemon {
 
 impl CaptureOspfDaemon {
     pub fn new(
-        interface_name: &str,
+        iface: &NetworkInterface,
         handler: impl FnMut(Ipv4Addr, Ipv4Addr, OspfPacket) + Send + 'static,
     ) -> Result<Self, ChannelError> {
         let handler = Box::new(handler);
 
-        let interface = datalink::interfaces()
-            .into_iter()
-            .filter(|i| i.name == interface_name) // 根据接口名称过滤网卡列表
-            .next()
-            .ok_or(ChannelError::InterfaceNotFound(interface_name.to_string()))?;
-
-        let ips = interface
+        let ips = iface
             .ips
             .iter()
             .filter_map(|ip| {
@@ -58,9 +50,9 @@ impl CaptureOspfDaemon {
                 }
             })
             .collect();
-        log_success!("listening on {} ({:?})", interface.name, ips);
+        log_success!("listening on {} ({:?})", iface.name, ips);
 
-        let (_, receiver) = match datalink::channel(&interface, Default::default()) {
+        let (_, receiver) = match datalink::channel(iface, Default::default()) {
             // 创建数据链路层通道，用于接收和发送数据包
             Ok(Ethernet(tx, rx)) => (tx, rx), // 如果通道类型是以太网通道，则将发送和接收通道分别赋值给_tx和rx
             Ok(_) => return Err(ChannelError::BadChannelType), // 如果是其他类型的通道，抛出错误

@@ -1,5 +1,3 @@
-use std::net::Ipv4Addr;
-
 use super::bits::*;
 use super::lsa::*;
 
@@ -71,35 +69,6 @@ pub struct LSUpdate {
 pub struct LSAcknowledge {
     pub lsa_header: Vec<LsaHeader>,
 }
-
-#[derive(Debug, Clone)]
-pub struct AddressedPacket<T> {
-    pub ip_addr: Ipv4Addr,
-    pub router_id: u32,
-    pub packet: T,
-}
-
-impl<T> AddressedPacket<T> {
-    pub fn new(ip_addr: Ipv4Addr, router_id: u32, packet: T) -> Self {
-        Self {
-            ip_addr,
-            router_id,
-            packet,
-        }
-    }
-}
-
-impl<T: FromBuf> AddressedPacket<T> {
-    pub fn from_payload(ip_addr: Ipv4Addr, router_id: u32, payload: &mut impl Buf) -> Self {
-        Self::new(ip_addr, router_id, T::from_buf(payload))
-    }
-}
-
-pub type AddressedHelloPacket = AddressedPacket<HelloPacket>;
-pub type AddressedDBDescription = AddressedPacket<DBDescription>;
-pub type AddressedLSRequest = AddressedPacket<LSRequest>;
-pub type AddressedLSUpdate = AddressedPacket<LSUpdate>;
-pub type AddressedLSAcknowledge = AddressedPacket<LSAcknowledge>;
 
 #[cfg(test)]
 mod test {

@@ -1,52 +1,31 @@
-pub mod ack;
-pub mod dd;
-pub mod hello;
-pub mod lsr;
-pub mod lsu;
+mod ack;
+mod dd;
+mod hello;
+mod lsr;
+mod lsu;
 
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
+use bytes::Buf;
 use ospf_packet::{
     packet::{types::*, *},
-    Ospf,
+    FromBuf, Ospf,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 
-use crate::capture::OspfHandler;
-use crate::constant::{AllDRouters, BackboneArea};
 use crate::interface::Interface;
 use crate::log_error;
-use crate::router::RType;
-
-#[derive(Clone)]
-pub struct PacketSender {
-    pub hello_tx: mpsc::Sender<AddressedHelloPacket>,
-    pub dd_tx: mpsc::Sender<AddressedDBDescription>,
-    pub lsr_tx: mpsc::Sender<AddressedLSRequest>,
-    pub lsu_tx: mpsc::Sender<AddressedLSUpdate>,
-    pub ack_tx: mpsc::Sender<AddressedLSAcknowledge>,
-}
-
-pub struct PacketReceiver {
-    pub hello_rx: mpsc::Receiver<AddressedHelloPacket>,
-    pub dd_rx: mpsc::Receiver<AddressedDBDescription>,
-    pub lsr_rx: mpsc::Receiver<AddressedLSRequest>,
-    pub lsu_rx: mpsc::Receiver<AddressedLSUpdate>,
-    pub ack_rx: mpsc::Receiver<AddressedLSAcknowledge>,
-}
-
-pub fn channel(buffer: usize) -> (PacketSender, PacketReceiver) {
-    let (hello_tx, hello_rx) = mpsc::channel(buffer);
-    let (dd_tx, dd_rx) = mpsc::channel(buffer);
-    let (lsr_tx, lsr_rx) = mpsc::channel(buffer);
-    let (lsu_tx, lsu_rx) = mpsc::channel(buffer);
-    let (ack_tx, ack_rx) = mpsc::channel(buffer);
-    (PacketSender { hello_tx, dd_tx, lsr_tx, lsu_tx, ack_tx }, PacketReceiver { hello_rx, dd_rx, lsr_rx, lsu_rx, ack_rx })
-}
+use crate::{capture::OspfHandler, util::ip2hex};
+use crate::{
+    constant::{AllDRouters, BackboneArea},
+    interface::AInterface,
+    neighbor::{ANeighbor, Neighbor},
+    util::hex2ip,
+};
 
 #[allow(non_upper_case_globals)]
 #[doc = "首先检查 ospf 报头，对于合法报头，发送给对应报文处理器处理"]
-pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>, tx: PacketSender) -> OspfHandler {
+pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>) -> OspfHandler {
     Box::new(move |src, dest, packet| {
         // debug
         #[cfg(debug_assertions)]
@@ -58,17 +37,15 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>, tx: PacketSender) -
         // dispatch
         let packet: Ospf = packet.into();
         let interface = interface.clone();
-        let tx = tx.clone();
         // packet
         let hd = tokio::spawn(async move {
-            let interface = interface.read().await;
-            let router = interface.router.read().await;
+            let iface = interface.read().await;
             match packet.area_id {
-                x if x == interface.area_id => (),                        // ok
-                BackboneArea if router.router_type != RType::Other => (), // ok
-                _ => return,                                              // bad area id
+                x if x == ip2hex(iface.area_id) => (),                 // ok
+                BackboneArea if iface.is_dr() || iface.is_bdr() => (), // ok
+                _ => return,                                           // bad area id
             }
-            if dest == AllDRouters && router.router_type == RType::Other {
+            if dest == AllDRouters && iface.is_drother() {
                 return;
             } // bad dest
             match packet.au_type {
@@ -76,32 +53,17 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>, tx: PacketSender) -
                 _ => todo!(), //todo implement other au type
             }
             let payload = &mut packet.payload.as_slice();
+            let router_id = hex2ip(packet.router_id);
+            let neighbor = Neighbor::get_by_id(router_id)
+                .await
+                .unwrap_or(Neighbor::new(router_id, src));
+            drop(iface); // release the lock
             match packet.message_type {
-                HELLO_PACKET => tx
-                    .hello_tx
-                    .send(AddressedHelloPacket::from_payload(src, packet.router_id, payload))
-                    .await
-                    .unwrap(),
-                DB_DESCRIPTION => tx
-                    .dd_tx
-                    .send(AddressedDBDescription::from_payload(src, packet.router_id, payload))
-                    .await
-                    .unwrap(),
-                LS_REQUEST => tx
-                    .lsr_tx
-                    .send(AddressedLSRequest::from_payload(src, packet.router_id, payload))
-                    .await
-                    .unwrap(),
-                LS_UPDATE => tx
-                    .lsu_tx
-                    .send(AddressedLSUpdate::from_payload(src, packet.router_id, payload))
-                    .await
-                    .unwrap(),
-                LS_ACKNOWLEDGE => tx
-                    .ack_tx
-                    .send(AddressedLSAcknowledge::from_payload(src, packet.router_id, payload))
-                    .await
-                    .unwrap(),
+                HELLO_PACKET => handle::<HelloPacket>(interface, neighbor, payload).await,
+                DB_DESCRIPTION => handle::<DBDescription>(interface, neighbor, payload).await,
+                LS_REQUEST => handle::<LSRequest>(interface, neighbor, payload).await,
+                LS_UPDATE => handle::<LSUpdate>(interface, neighbor, payload).await,
+                LS_ACKNOWLEDGE => handle::<LSAcknowledge>(interface, neighbor, payload).await,
                 _ => return, // bad msg type
             }
         });
@@ -112,4 +74,47 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>, tx: PacketSender) -
             }
         });
     })
+}
+
+trait HandlePacket {
+    async fn handle(self, iface: AInterface, src: ANeighbor);
+}
+
+impl HandlePacket for LSAcknowledge {
+    fn handle(self, iface: AInterface, src: ANeighbor) -> impl Future<Output = ()> {
+        ack::handle(iface, src, self)
+    }
+}
+
+impl HandlePacket for DBDescription {
+    fn handle(self, iface: AInterface, src: ANeighbor) -> impl Future<Output = ()> {
+        dd::handle(iface, src, self)
+    }
+}
+
+impl HandlePacket for HelloPacket {
+    fn handle(self, iface: AInterface, src: ANeighbor) -> impl Future<Output = ()> {
+        hello::handle(iface, src, self)
+    }
+}
+
+impl HandlePacket for LSRequest {
+    fn handle(self, iface: AInterface, src: ANeighbor) -> impl Future<Output = ()> {
+        lsr::handle(iface, src, self)
+    }
+}
+
+impl HandlePacket for LSUpdate {
+    fn handle(self, iface: AInterface, src: ANeighbor) -> impl Future<Output = ()> {
+        lsu::handle(iface, src, self)
+    }
+}
+
+fn handle<T: FromBuf + HandlePacket>(
+    iface: AInterface,
+    src: ANeighbor,
+    payload: &mut impl Buf,
+) -> impl Future<Output = ()> {
+    let packet = T::from_buf(payload);
+    packet.handle(iface, src)
 }

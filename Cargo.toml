@@ -12,7 +12,8 @@ members = ["ospf-packet", "ospf-macros"]
 
 [dependencies]
 bytes = "1.6.*"                                     # convenient byte manipulation
+lazy_static = "1.4.*"                               # lazy static initialization
 ospf-packet = { path = "ospf-packet" }              # OSPF packet declaration & parsing
-pnet = "0.34.0"                                     # raw socket
-thiserror = "1.0.61"                                # error handling
-tokio = { version = "1.37.0", features = ["full"] } # async runtime
+pnet = "0.35.*"                                     # raw socket
+thiserror = "1.0.*"                                 # error handling
+tokio = { version = "1.38.*", features = ["full"] } # async runtime
