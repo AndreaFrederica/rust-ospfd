@@ -54,9 +54,12 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>) -> OspfHandler {
             }
             let payload = &mut packet.payload.as_slice();
             let router_id = hex2ip(packet.router_id);
-            let neighbor = Neighbor::get_by_id(router_id)
+            let neighbor = interface
+                .read()
                 .await
-                .unwrap_or(Neighbor::new(router_id, src));
+                .get_neighbor(router_id)
+                .await
+                .unwrap_or(Neighbor::new(&interface, router_id, src));
             drop(iface); // release the lock
             match packet.message_type {
                 HELLO_PACKET => handle::<HelloPacket>(interface, neighbor, payload).await,

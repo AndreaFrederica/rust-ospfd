@@ -2,9 +2,9 @@ mod listen;
 mod state;
 pub use state::*;
 
-use crate::{constant::BackboneArea, types::*, util::hex2ip};
+use crate::{constant::BackboneArea, neighbor::ANeighbor, types::*, util::hex2ip};
 
-use std::{net::Ipv4Addr, sync::Arc};
+use std::{collections::HashMap, net::Ipv4Addr, sync::{Arc, Weak}};
 
 use pnet::{
     datalink::{self, NetworkInterface},
@@ -30,7 +30,7 @@ pub struct Interface {
     pub router_priority: u8,
     pub hello_timer: TimerHandle,
     pub wait_timer: TimerHandle,
-    pub neighbors: Vec<Ipv4Addr>,
+    pub neighbors: HashMap<Ipv4Addr, ANeighbor>,
     pub dr: Ipv4Addr,
     pub bdr: Ipv4Addr,
     pub cost: u16,
@@ -49,6 +49,7 @@ pub enum NetType {
 }
 
 pub type AInterface = Arc<RwLock<Interface>>;
+pub type WInterface = Weak<RwLock<Interface>>;
 
 impl Interface {
     pub fn new(
@@ -72,7 +73,7 @@ impl Interface {
             router_priority: 1,
             hello_timer: None,
             wait_timer: None,
-            neighbors: Vec::new(),
+            neighbors: HashMap::new(),
             dr: hex2ip(0),
             bdr: hex2ip(0),
             cost: 0,
@@ -115,6 +116,10 @@ impl Interface {
                 "There is no interface named {}",
                 self.interface_name
             ))
+    }
+
+    pub async fn get_neighbor(&self, router_id: Ipv4Addr) -> Option<ANeighbor> {
+        self.neighbors.get(&router_id).cloned()
     }
 
     pub fn reset(&mut self) {

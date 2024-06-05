@@ -34,5 +34,5 @@ pub async fn send_packet(iface: AInterface, packet: &impl OspfSubPacket, destina
         Err(e) => panic!("failed to send packet: {}", e),
     }
     #[cfg(debug_assertions)]
-    crate::log_success!("sent packet: {:#?}", packet);
+    crate::log!("sent packet: {:#?}", packet);
 }

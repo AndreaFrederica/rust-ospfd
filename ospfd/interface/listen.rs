@@ -1,10 +1,6 @@
-use std::sync::Weak;
+use super::{InterfaceEvent, InterfaceState, WInterface};
 
-use tokio::sync::RwLock;
-
-use super::{Interface, InterfaceEvent, InterfaceState};
-
-pub fn listen_interface(interface: Weak<RwLock<Interface>>) {
+pub fn listen_interface(interface: WInterface) {
     tokio::spawn(async move {
         while let Some(interface) = interface.upgrade() {
             let net = interface.read().await.get_network_interface();

@@ -1,20 +1,21 @@
 mod state;
-use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+use std::{net::Ipv4Addr, sync::Arc};
 
 pub use state::*;
 
-use lazy_static::lazy_static;
 use ospf_packet::lsa::Lsa;
 use tokio::sync::RwLock;
 
-use crate::util::hex2ip;
+use crate::{interface::{AInterface, WInterface}, util::hex2ip};
 
 use super::types::*;
 
 #[derive(Debug)]
 pub struct Neighbor {
+    pub interface: WInterface,
     pub state: NeighborState,
     pub inactive_timer: TimerHandle,
+    pub dead_interval: u32,
     pub master: bool,
     pub dd_seq_num: u32,
     pub dd_last_packet: u32,
@@ -30,17 +31,14 @@ pub struct Neighbor {
 }
 
 pub type ANeighbor = Arc<RwLock<Neighbor>>;
-type NeighborMap = RwLock<HashMap<Ipv4Addr, ANeighbor>>;
-
-lazy_static! {
-    pub static ref ID2NEIGHBORS: NeighborMap = RwLock::new(HashMap::new());
-}
 
 impl Neighbor {
-    pub fn new(router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> ANeighbor {
-        Arc::new(RwLock::new(Self {
+    pub fn new(interface: &AInterface, router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> ANeighbor {
+        let this = Arc::new(RwLock::new(Self {
+            interface: Arc::downgrade(&interface),
             state: NeighborState::Down,
             inactive_timer: None,
+            dead_interval: 0,
             master: false,
             dd_seq_num: 0,
             dd_last_packet: 0,
@@ -53,10 +51,19 @@ impl Neighbor {
             ls_retransmission_list: Vec::new(),
             db_summary_list: Vec::new(),
             ls_request_list: Vec::new(),
-        }))
+        }));
+        this
     }
 
-    pub async fn get_by_id(router_id: Ipv4Addr) -> Option<ANeighbor> {
-        return ID2NEIGHBORS.read().await.get(&router_id).cloned();
+    pub fn reset(&mut self) {
+        todo!("reset lsa database");
+    }
+
+    pub fn is_dr(&self) -> bool {
+        self.router_id == self.dr
+    }
+
+    pub fn is_bdr(&self) -> bool {
+        self.router_id == self.bdr
     }
 }

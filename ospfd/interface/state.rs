@@ -1,4 +1,8 @@
-use std::{net::Ipv4Addr, ops::{Deref, DerefMut}, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 use futures::FutureExt as _;
 use ospf_packet::packet;
@@ -7,7 +11,7 @@ use tokio::time::sleep;
 use super::{AInterface, Interface, NetType};
 use crate::{
     constant::AllSPFRouters,
-    neighbor::{Neighbor, NeighborState},
+    neighbor::{Neighbor, NeighborEvent, NeighborState},
     sender::send_packet,
     util::hex2ip,
 };
@@ -15,7 +19,6 @@ use crate::{
 #[cfg(debug_assertions)]
 use crate::{log, log_success};
 
-#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterfaceState {
     Down,
@@ -195,7 +198,7 @@ async fn send_hello(interface: AInterface) {
         router_dead_interval: ifr.hello_interval as u32 * 4,
         designated_router: ifr.dr,
         backup_designated_router: ifr.bdr,
-        neighbors: ifr.neighbors.clone(),
+        neighbors: ifr.neighbors.keys().cloned().collect(),
     };
     drop(ifr);
     send_packet(interface, &packet, AllSPFRouters).await;
@@ -234,17 +237,16 @@ impl From<&Interface> for SelectDr {
 async fn select_dr(interface: AInterface) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     // step1: find all available neighbors
-    let mut can: Vec<SelectDr> = interface
-        .read()
-        .await
+    let iface = interface.read().await;
+    let mut can: Vec<SelectDr> = iface
         .neighbors
-        .iter()
-        .filter_map(|&id| rt.block_on(Neighbor::get_by_id(id)))
+        .values()
         .filter(|n| rt.block_on(n.read()).state >= NeighborState::TwoWay)
         .map(|n| rt.block_on(n.read()).deref().into())
         .collect();
-    can.push(interface.read().await.deref().into());
+    can.push(iface.deref().into());
     can = can.into_iter().filter(|v| v.priority > 0).collect();
+    drop(iface);
     let cmp = |x: &&SelectDr, y: &&SelectDr| {
         if x.priority == y.priority {
             x.id.cmp(&y.id)
@@ -293,5 +295,7 @@ async fn select_dr(interface: AInterface) {
         todo!()
     }
     // step7: AdjOk?
-    //todo!!
+    for neighbor in interface.read().await.neighbors.values() {
+        neighbor.clone().adj_ok().await;
+    }
 }
