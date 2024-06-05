@@ -1,3 +1,4 @@
+mod listen;
 mod state;
 pub use state::*;
 
@@ -57,7 +58,7 @@ impl Interface {
         ip_addr: Ipv4Addr,
         ip_mask: Ipv4Addr,
     ) -> AInterface {
-        Arc::new(RwLock::new(Self {
+        let this = Arc::new(RwLock::new(Self {
             router_id,
             interface_name,
             sender,
@@ -78,7 +79,9 @@ impl Interface {
             rxmt_interval: 1,
             au_type: 0,
             au_key: 0,
-        }))
+        }));
+        listen::listen_interface(Arc::downgrade(&this));
+        this
     }
 
     pub fn from(iface: &NetworkInterface) -> AInterface {
@@ -117,6 +120,9 @@ impl Interface {
     pub fn reset(&mut self) {
         self.hello_timer.take().map(|f| f.abort());
         self.wait_timer.take().map(|f| f.abort());
+        self.dr = hex2ip(0);
+        self.bdr = hex2ip(0);
+        self.cost = 0;
     }
 
     pub fn is_dr(&self) -> bool {

@@ -10,7 +10,6 @@ mod types;
 mod util;
 
 use daemon::Daemon;
-use interface::InterfaceEvent;
 use pnet::datalink;
 
 #[tokio::main()]
@@ -24,7 +23,6 @@ async fn main() {
     let ospf_handler = handler::ospf_handler_maker(interface.clone());
     let capture_daemon = capture::CaptureOspfDaemon::new(&iface, ospf_handler).unwrap();
 
-    interface.interface_up().await;
     let hd = tokio::spawn(capture_daemon.run_forever());
     hd.await.unwrap();
 }

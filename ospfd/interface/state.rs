@@ -1,14 +1,17 @@
-use std::{ops::DerefMut, time::Duration};
+use std::{net::Ipv4Addr, ops::{Deref, DerefMut}, time::Duration};
 
 use futures::FutureExt as _;
 use ospf_packet::packet;
 use tokio::time::sleep;
 
 use super::{AInterface, Interface, NetType};
-use crate::{constant::AllSPFRouters, sender::send_packet};
+use crate::{
+    constant::AllSPFRouters,
+    neighbor::{Neighbor, NeighborState},
+    sender::send_packet,
+    util::hex2ip,
+};
 
-#[cfg(debug_assertions)]
-use std::ops::Deref;
 #[cfg(debug_assertions)]
 use crate::{log, log_success};
 
@@ -76,14 +79,16 @@ impl InterfaceEvent for AInterface {
         } else {
             NetType::Virtual
         };
-        if matches!(
+        interface.state = if matches!(
             interface.net_type,
             NetType::P2P | NetType::P2MP | NetType::Virtual
         ) {
-            interface.state = InterfaceState::PointToPoint;
+            InterfaceState::PointToPoint
+        } else if interface.router_priority == 0 {
+            InterfaceState::DROther
         } else {
-            interface.state = InterfaceState::Waiting;
-        }
+            InterfaceState::Waiting
+        };
         tokio::spawn(send_hello(self.clone()));
         #[cfg(debug_assertions)]
         log_state(InterfaceState::Down, interface.deref());
@@ -169,11 +174,12 @@ impl InterfaceEvent for AInterface {
 
 fn set_hello_timer(ifw: &mut Interface, interface: AInterface) {
     let interval = ifw.hello_interval as u64;
-    ifw.hello_timer = Some(tokio::spawn(
-        sleep(Duration::from_secs(interval)).then(|_| async {
+    ifw.hello_timer.take().map(|f| f.abort());
+    ifw.hello_timer = Some(tokio::spawn(sleep(Duration::from_secs(interval)).then(
+        |_| async {
             send_hello(interface).await;
-        }),
-    ));
+        },
+    )));
 }
 
 async fn send_hello(interface: AInterface) {
@@ -195,7 +201,97 @@ async fn send_hello(interface: AInterface) {
     send_packet(interface, &packet, AllSPFRouters).await;
 }
 
-//todo implement select_dr
-async fn select_dr(_interface: AInterface) {
-    todo!()
+#[derive(Debug, Clone, Copy)]
+struct SelectDr {
+    id: Ipv4Addr,
+    priority: u8,
+    bdr: Ipv4Addr,
+    dr: Ipv4Addr,
+}
+
+impl From<&Neighbor> for SelectDr {
+    fn from(value: &Neighbor) -> Self {
+        SelectDr {
+            id: value.router_id,
+            priority: value.priority,
+            bdr: value.bdr,
+            dr: value.dr,
+        }
+    }
+}
+
+impl From<&Interface> for SelectDr {
+    fn from(value: &Interface) -> Self {
+        SelectDr {
+            id: value.router_id,
+            priority: value.router_priority,
+            bdr: value.bdr,
+            dr: value.dr,
+        }
+    }
+}
+
+async fn select_dr(interface: AInterface) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    // step1: find all available neighbors
+    let mut can: Vec<SelectDr> = interface
+        .read()
+        .await
+        .neighbors
+        .iter()
+        .filter_map(|&id| rt.block_on(Neighbor::get_by_id(id)))
+        .filter(|n| rt.block_on(n.read()).state >= NeighborState::TwoWay)
+        .map(|n| rt.block_on(n.read()).deref().into())
+        .collect();
+    can.push(interface.read().await.deref().into());
+    can = can.into_iter().filter(|v| v.priority > 0).collect();
+    let cmp = |x: &&SelectDr, y: &&SelectDr| {
+        if x.priority == y.priority {
+            x.id.cmp(&y.id)
+        } else {
+            x.priority.cmp(&y.priority)
+        }
+    };
+    loop {
+        // step2: select bdr
+        let bdr = {
+            let can: Vec<_> = can.iter().filter(|v| v.dr != v.id).copied().collect();
+            let vec: Vec<_> = can.iter().filter(|v| v.bdr == v.id).copied().collect();
+            if vec.is_empty() { can } else { vec }
+                .iter()
+                .max_by(cmp)
+                .map(|v| v.id)
+                .unwrap_or(hex2ip(0))
+        };
+        // step3: select dr
+        let dr = {
+            let vec: Vec<_> = can.iter().filter(|v| v.dr == v.id).copied().collect();
+            vec.iter().max_by(cmp).map(|v| v.id).unwrap_or(bdr)
+        };
+        let mut this = interface.write().await;
+        this.dr = dr;
+        this.bdr = bdr;
+        // step4: state change
+        let new_select = dr == this.router_id && !this.is_dr()
+            || bdr == this.router_id && !this.is_bdr()
+            || this.is_dr() && dr != this.router_id
+            || this.is_bdr() && bdr != this.router_id;
+        // step5: state change
+        this.state = if dr == this.router_id {
+            InterfaceState::DR
+        } else if bdr == this.router_id {
+            InterfaceState::Backup
+        } else {
+            InterfaceState::DROther
+        };
+        if !new_select {
+            break;
+        }
+    }
+    // step6: send hello packet
+    if interface.read().await.net_type == NetType::NBMA {
+        todo!()
+    }
+    // step7: AdjOk?
+    //todo!!
 }
