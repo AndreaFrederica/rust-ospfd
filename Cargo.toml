@@ -12,6 +12,7 @@ members = ["ospf-packet", "ospf-macros"]
 
 [dependencies]
 bytes = "1.6.*"                                     # convenient byte manipulation
+futures = "0.3.*"                                   # future extension
 lazy_static = "1.4.*"                               # lazy static initialization
 ospf-packet = { path = "ospf-packet" }              # OSPF packet declaration & parsing
 pnet = "0.35.*"                                     # raw socket

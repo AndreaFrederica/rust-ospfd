@@ -72,6 +72,40 @@ pub struct LSAcknowledge {
     pub lsa_header: Vec<LsaHeader>,
 }
 
+pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf {
+    fn get_type(&self) -> u8;
+}
+
+impl OspfSubPacket for HelloPacket {
+    fn get_type(&self) -> u8 {
+        types::HELLO_PACKET
+    }
+}
+
+impl OspfSubPacket for DBDescription {
+    fn get_type(&self) -> u8 {
+        types::DB_DESCRIPTION
+    }
+}
+
+impl OspfSubPacket for LSRequest {
+    fn get_type(&self) -> u8 {
+        types::LS_REQUEST
+    }
+}
+
+impl OspfSubPacket for LSUpdate {
+    fn get_type(&self) -> u8 {
+        types::LS_UPDATE
+    }
+}
+
+impl OspfSubPacket for LSAcknowledge {
+    fn get_type(&self) -> u8 {
+        types::LS_ACKNOWLEDGE
+    }
+}
+
 #[cfg(test)]
 mod test {
     #![allow(non_snake_case)]

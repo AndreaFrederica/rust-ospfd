@@ -1,18 +1,24 @@
 mod state;
-use pnet::{datalink::NetworkInterface, ipnetwork::IpNetwork};
 pub use state::*;
 
-use crate::{constant::BackboneArea, util::hex2ip};
-
-use super::types::*;
+use crate::{constant::BackboneArea, types::*, util::hex2ip};
 
 use std::{net::Ipv4Addr, sync::Arc};
 
+use pnet::{
+    datalink::{self, NetworkInterface},
+    ipnetwork::IpNetwork,
+    packet::ip::IpNextHeaderProtocols::OspfigP,
+    transport::{
+        transport_channel, TransportChannelType::Layer4, TransportProtocol::Ipv4, TransportSender,
+    },
+};
 use tokio::sync::RwLock;
 
-#[derive(Debug)]
 pub struct Interface {
     pub router_id: Ipv4Addr,
+    pub interface_name: String,
+    pub sender: TransportSender,
     pub net_type: NetType,
     pub state: InterfaceState,
     pub ip_addr: Ipv4Addr,
@@ -28,11 +34,10 @@ pub struct Interface {
     pub bdr: Ipv4Addr,
     pub cost: u16,
     pub rxmt_interval: u16,
-    pub au_type: u8,
+    pub au_type: u16,
     pub au_key: u64,
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetType {
     P2P,
@@ -45,9 +50,17 @@ pub enum NetType {
 pub type AInterface = Arc<RwLock<Interface>>;
 
 impl Interface {
-    pub fn new(router_id: Ipv4Addr, ip_addr: Ipv4Addr, ip_mask: Ipv4Addr) -> AInterface {
+    pub fn new(
+        router_id: Ipv4Addr,
+        interface_name: String,
+        sender: TransportSender,
+        ip_addr: Ipv4Addr,
+        ip_mask: Ipv4Addr,
+    ) -> AInterface {
         Arc::new(RwLock::new(Self {
             router_id,
+            interface_name,
+            sender,
             net_type: NetType::Broadcast,
             state: InterfaceState::Down,
             ip_addr,
@@ -80,7 +93,30 @@ impl Interface {
                 }
             })
             .expect("No IPv4 address found on interface");
-        Self::new(ip.ip(), ip.ip(), ip.mask())
+        let tx = match transport_channel(4096, Layer4(Ipv4(OspfigP))) {
+            Ok((tx, ..)) => tx,
+            Err(e) => panic!(
+                "An error occurred when creating the transport channel: {}",
+                e
+            ),
+        };
+        Self::new(ip.ip(), iface.name.to_string(), tx, ip.ip(), ip.mask())
+    }
+
+    pub fn get_network_interface(&self) -> NetworkInterface {
+        datalink::interfaces()
+            .into_iter()
+            .filter(|i| i.name == self.interface_name)
+            .next()
+            .expect(&format!(
+                "There is no interface named {}",
+                self.interface_name
+            ))
+    }
+
+    pub fn reset(&mut self) {
+        self.hello_timer.take().map(|f| f.abort());
+        self.wait_timer.take().map(|f| f.abort());
     }
 
     pub fn is_dr(&self) -> bool {
@@ -94,5 +130,4 @@ impl Interface {
     pub fn is_drother(&self) -> bool {
         !self.is_dr() && !self.is_bdr()
     }
-
 }
