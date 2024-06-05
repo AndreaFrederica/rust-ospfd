@@ -60,10 +60,10 @@ impl Neighbor {
     }
 
     pub fn is_dr(&self) -> bool {
-        self.router_id == self.dr
+        self.ip_addr == self.dr
     }
 
     pub fn is_bdr(&self) -> bool {
-        self.router_id == self.bdr
+        self.ip_addr == self.bdr
     }
 }

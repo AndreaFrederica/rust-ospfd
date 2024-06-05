@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use futures::FutureExt as _;
+use futures::{executor, FutureExt as _};
 use ospf_packet::packet;
 use tokio::time::sleep;
 
@@ -98,15 +98,14 @@ impl InterfaceEvent for AInterface {
     }
 
     async fn wait_timer(self) {
-        let interface = self.read().await;
         #[cfg(debug_assertions)]
-        log_event("wait_timer", interface.deref());
-        if interface.state != InterfaceState::Waiting {
+        log_event("wait_timer", self.read().await.deref());
+        if self.read().await.state != InterfaceState::Waiting {
             return;
         }
         select_dr(self.clone()).await;
         #[cfg(debug_assertions)]
-        log_state(InterfaceState::Waiting, interface.deref());
+        log_state(InterfaceState::Waiting, self.read().await.deref());
     }
 
     async fn backup_seen(self) {
@@ -206,8 +205,9 @@ async fn send_hello(interface: AInterface) {
 
 #[derive(Debug, Clone, Copy)]
 struct SelectDr {
-    id: Ipv4Addr,
     priority: u8,
+    id: Ipv4Addr,
+    ip: Ipv4Addr,
     bdr: Ipv4Addr,
     dr: Ipv4Addr,
 }
@@ -215,8 +215,9 @@ struct SelectDr {
 impl From<&Neighbor> for SelectDr {
     fn from(value: &Neighbor) -> Self {
         SelectDr {
-            id: value.router_id,
             priority: value.priority,
+            id: value.router_id,
+            ip: value.ip_addr,
             bdr: value.bdr,
             dr: value.dr,
         }
@@ -226,8 +227,9 @@ impl From<&Neighbor> for SelectDr {
 impl From<&Interface> for SelectDr {
     fn from(value: &Interface) -> Self {
         SelectDr {
-            id: value.router_id,
             priority: value.router_priority,
+            id: value.router_id,
+            ip: value.ip_addr,
             bdr: value.bdr,
             dr: value.dr,
         }
@@ -235,14 +237,13 @@ impl From<&Interface> for SelectDr {
 }
 
 async fn select_dr(interface: AInterface) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
     // step1: find all available neighbors
     let iface = interface.read().await;
     let mut can: Vec<SelectDr> = iface
         .neighbors
         .values()
-        .filter(|n| rt.block_on(n.read()).state >= NeighborState::TwoWay)
-        .map(|n| rt.block_on(n.read()).deref().into())
+        .filter(|n| executor::block_on(n.read()).state >= NeighborState::TwoWay)
+        .map(|n| executor::block_on(n.read()).deref().into())
         .collect();
     can.push(iface.deref().into());
     can = can.into_iter().filter(|v| v.priority > 0).collect();
@@ -262,33 +263,37 @@ async fn select_dr(interface: AInterface) {
             if vec.is_empty() { can } else { vec }
                 .iter()
                 .max_by(cmp)
-                .map(|v| v.id)
+                .map(|v| v.ip)
                 .unwrap_or(hex2ip(0))
         };
         // step3: select dr
         let dr = {
             let vec: Vec<_> = can.iter().filter(|v| v.dr == v.id).copied().collect();
-            vec.iter().max_by(cmp).map(|v| v.id).unwrap_or(bdr)
+            vec.iter().max_by(cmp).map(|v| v.ip).unwrap_or(bdr)
         };
+        let bdr = if dr == bdr { hex2ip(0) } else { bdr };
         let mut this = interface.write().await;
+        // step4: state change
+        let new_select = dr == this.ip_addr && !this.is_dr()
+            || bdr == this.ip_addr && !this.is_bdr()
+            || this.is_dr() && dr != this.ip_addr
+            || this.is_bdr() && bdr != this.ip_addr;
         this.dr = dr;
         this.bdr = bdr;
-        // step4: state change
-        let new_select = dr == this.router_id && !this.is_dr()
-            || bdr == this.router_id && !this.is_bdr()
-            || this.is_dr() && dr != this.router_id
-            || this.is_bdr() && bdr != this.router_id;
-        // step5: state change
-        this.state = if dr == this.router_id {
+        if !new_select {
+            break;
+        }
+    }
+    // step5: state change
+    {
+        let mut this = interface.write().await;
+        this.state = if this.is_dr(){
             InterfaceState::DR
-        } else if bdr == this.router_id {
+        } else if this.is_bdr() {
             InterfaceState::Backup
         } else {
             InterfaceState::DROther
         };
-        if !new_select {
-            break;
-        }
     }
     // step6: send hello packet
     if interface.read().await.net_type == NetType::NBMA {
