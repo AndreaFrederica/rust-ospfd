@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
-use ospf_packet::{packet, FromBuf, OspfPacket};
+use ospf_packet::OspfPacket;
 use pnet::datalink::Channel::Ethernet; // 导入以太网通道
 use pnet::datalink::{self, DataLinkReceiver, NetworkInterface}; // 导入datalink模块中的相关项
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket}; // 导入以太网数据包相关项
@@ -12,7 +12,12 @@ use pnet::packet::Packet; // 导入数据包trait
 
 use crate::constant::{AllDRouters, AllSPFRouters};
 use crate::daemon::Runnable;
-use crate::{log, log_error, log_success};
+use crate::{log_error, log_success};
+
+#[cfg(debug_assertions)]
+use ospf_packet::{packet, FromBuf};
+#[cfg(debug_assertions)]
+use crate::log;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
@@ -114,37 +119,36 @@ impl Runnable for CaptureOspfDaemon {
     }
 }
 
-#[allow(unused)]
+#[cfg(debug_assertions)]
 #[doc = "打印接收到的数据包"]
 pub fn echo_handler(source: Ipv4Addr, destination: Ipv4Addr, packet: OspfPacket) {
-    log!(
-        "Received OSPF packet ({} -> {}): {:x?}",
+    let pkg_str = format!(
+        "Received OSPF packet ({} -> {}): {}",
         source, destination, packet
     );
     match packet.get_message_type() {
         packet::types::HELLO_PACKET => {
             let hello_packet = packet::HelloPacket::from_buf(&mut packet.payload());
-            log!("> Hello packet: {:x?}", hello_packet);
+            log!("{pkg_str} Hello packet: {:#?}", hello_packet);
         }
         packet::types::DB_DESCRIPTION => {
             let db_description = packet::DBDescription::from_buf(&mut packet.payload());
-            log!("> DB Description packet: {:x?}", db_description);
+            log!("{pkg_str} DB Description packet: {:#?}", db_description);
         }
         packet::types::LS_REQUEST => {
             let ls_request = packet::LSRequest::from_buf(&mut packet.payload());
-            log!("> LS Request packet: {:x?}", ls_request);
+            log!("{pkg_str} LS Request packet: {:#?}", ls_request);
         }
         packet::types::LS_UPDATE => {
             let ls_update = packet::LSUpdate::from_buf(&mut packet.payload());
-            log!("> LS Update packet: {:x?}", ls_update);
+            log!("{pkg_str} LS Update packet: {:#?}", ls_update);
         }
         packet::types::LS_ACKNOWLEDGE => {
             let ls_acknowledge = packet::LSAcknowledge::from_buf(&mut packet.payload());
-            log!("> LS Acknowledge packet: {:x?}", ls_acknowledge);
+            log!("{pkg_str} LS Acknowledge packet: {:#?}", ls_acknowledge);
         }
         _ => {
-            log!("> Unknown packet type");
+            log!("{pkg_str} Unknown packet type");
         }
     }
-    log!("");
 }

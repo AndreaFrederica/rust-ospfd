@@ -72,7 +72,7 @@ pub struct LSAcknowledge {
     pub lsa_header: Vec<LsaHeader>,
 }
 
-pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf {
+pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf + std::fmt::Debug {
     fn get_type(&self) -> u8;
 }
 

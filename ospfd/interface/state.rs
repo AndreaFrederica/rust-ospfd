@@ -192,7 +192,7 @@ async fn send_hello(interface: AInterface) {
         neighbors: ifr.neighbors.clone(),
     };
     drop(ifr);
-    send_packet(interface, packet, AllSPFRouters).await;
+    send_packet(interface, &packet, AllSPFRouters).await;
 }
 
 //todo implement select_dr

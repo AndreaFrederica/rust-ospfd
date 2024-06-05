@@ -74,8 +74,45 @@ impl From<OspfPacket<'_>> for Ospf {
             checksum: value.get_checksum(),
             au_type: value.get_au_type(),
             authentication: value.get_authentication(),
-            payload: value.payload().to_vec(), 
+            payload: value.payload().to_vec(),
         }
+    }
+}
+
+impl std::fmt::Display for MutableOspfPacket<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_immutable().fmt(f)
+    }
+}
+
+macro_rules! ospf_fmt {
+    () => {
+"OspfPacket: {{
+    version: {},
+    message_type: {},
+    length: {},
+    router_id: {},
+    area_id: {},
+    checksum: {},
+    au_type: {},
+    authentication: {},
+}}"
+    };
+}
+
+impl std::fmt::Display for OspfPacket<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f, ospf_fmt!(),
+            self.get_version(),
+            self.get_message_type(),
+            self.get_length(),
+            self.get_router_id(),
+            self.get_area_id(),
+            self.get_checksum(),
+            self.get_au_type(),
+            self.get_authentication()
+        )
     }
 }
 
