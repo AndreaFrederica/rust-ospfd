@@ -1,3 +1,6 @@
 #! /bin/bash
 
-cp ospf* /opt/docker/volumes/$(docker volume ls | sed -n 2,2p | awk '{print $2}')/_data
+for name in $(docker volume ls | sed 1d | awk '{print $2}')
+do
+cp ospf* /opt/docker/volumes/$name/_data
+done
