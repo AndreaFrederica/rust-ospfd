@@ -1,6 +1,8 @@
+use futures::executor;
+
 use super::{ANeighbor, Neighbor};
 
-use crate::interface::NetType;
+use crate::{interface::NetType, log_error};
 
 #[cfg(debug_assertions)]
 use crate::{log, log_success};
@@ -224,7 +226,13 @@ impl NeighborEvent for ANeighbor {
 }
 
 async fn reset_timer(this: ANeighbor) {
-    let dead_interval = this.read().await.dead_interval as u64;
+    let dead_interval = this
+        .read()
+        .await
+        .interface
+        .upgrade()
+        .map(|i| executor::block_on(i.read()).dead_interval)
+        .unwrap_or(1) as u64;
     let cloned = this.clone();
     let mut this = this.write().await;
     this.inactive_timer.take().map(|f| f.abort());
@@ -260,5 +268,5 @@ async fn ex_start(this: ANeighbor) {
         .as_secs() as u32;
     this.master = true;
     //todo begin sending dd packet...
-    todo!("send dd packet")
+    log_error!("todo! send dd packet")
 }

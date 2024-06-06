@@ -9,6 +9,15 @@ pub const fn hex2ip(hex: u32) -> Ipv4Addr {
     Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])
 }
 
+#[macro_export]
+macro_rules! must {
+    ($x:expr) => {
+        if !($x) {
+            return;
+        }
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

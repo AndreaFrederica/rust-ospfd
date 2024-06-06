@@ -119,6 +119,7 @@ impl Runnable for CaptureOspfDaemon {
     }
 }
 
+#[allow(unused)]
 #[cfg(debug_assertions)]
 #[doc = "打印接收到的数据包"]
 pub fn echo_handler(source: Ipv4Addr, destination: Ipv4Addr, packet: OspfPacket) {

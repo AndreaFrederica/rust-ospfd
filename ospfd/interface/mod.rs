@@ -26,10 +26,13 @@ pub struct Interface {
     pub ip_mask: Ipv4Addr,
     pub area_id: Ipv4Addr,
     pub hello_interval: u16,
+    pub dead_interval: u32,
     pub inf_trans_delay: u16,
     pub router_priority: u8,
+    pub external_routing: bool,
     pub hello_timer: TimerHandle,
     pub wait_timer: TimerHandle,
+    #[doc = "ip -> neighbor (p2p|virtual => ip := router_id)"]
     pub neighbors: HashMap<Ipv4Addr, ANeighbor>,
     pub dr: Ipv4Addr,
     pub bdr: Ipv4Addr,
@@ -69,8 +72,10 @@ impl Interface {
             ip_mask,
             area_id: hex2ip(BackboneArea),
             hello_interval: 10,
+            dead_interval: 40,
             inf_trans_delay: 1,
             router_priority: 1,
+            external_routing: true,
             hello_timer: None,
             wait_timer: None,
             neighbors: HashMap::new(),
@@ -118,8 +123,8 @@ impl Interface {
             ))
     }
 
-    pub async fn get_neighbor(&self, router_id: Ipv4Addr) -> Option<ANeighbor> {
-        self.neighbors.get(&router_id).cloned()
+    pub async fn get_neighbor(&self, ip: Ipv4Addr) -> Option<ANeighbor> {
+        self.neighbors.get(&ip).cloned()
     }
 
     pub fn reset(&mut self) {

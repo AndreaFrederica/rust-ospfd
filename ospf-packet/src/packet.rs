@@ -14,6 +14,17 @@ pub mod types {
     pub const LS_ACKNOWLEDGE: u8 = 5;
 }
 
+pub const fn message_type_string(ty: u8) -> &'static str {
+    match ty {
+        types::HELLO_PACKET => "Hello Packet",
+        types::DB_DESCRIPTION => "Database Description Packet",
+        types::LS_REQUEST => "Link State Request Packet",
+        types::LS_UPDATE => "Link State Update Packet",
+        types::LS_ACKNOWLEDGE => "Link State Acknowledge Packet",
+        _ => "Unknown",
+    }
+}
+
 pub mod options {
     #[doc = "该位描述是否洪泛 AS-external-LSA，在本备忘录的第 3.6、9.5、10.8 和 12.1.2 节中描述。"]
     pub const E: u8 = 0b0000_0010;
@@ -25,6 +36,28 @@ pub mod options {
     pub const EA: u8 = 0b0001_0000;
     #[doc = "该位描述了按［引用 21］的说明处理按需链路。"]
     pub const DC: u8 = 0b0010_0000;
+
+    pub trait OptionExt {
+        fn is_set(&self, option: u8) -> bool;
+        fn set(&mut self, option: u8);
+        fn unset(&mut self, option: u8);
+    }
+}
+
+macro_rules! option_ext {
+    ($t:ty) => {
+        impl options::OptionExt for $t {
+            fn is_set(&self, option: u8) -> bool {
+                (self.options & option) != 0
+            }
+            fn set(&mut self, option: u8) {
+                self.options |= option;
+            }
+            fn unset(&mut self, option: u8) {
+                self.options &= !option;
+            }
+        }
+    };
 }
 
 /// Represents a OSPF Hello Packet.
@@ -71,6 +104,9 @@ pub struct LSUpdate {
 pub struct LSAcknowledge {
     pub lsa_header: Vec<LsaHeader>,
 }
+
+option_ext!(HelloPacket);
+option_ext!(DBDescription);
 
 pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf + std::fmt::Debug {
     fn get_type(&self) -> u8;

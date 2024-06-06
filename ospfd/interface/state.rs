@@ -5,15 +5,12 @@ use std::{
 };
 
 use futures::{executor, FutureExt as _};
-use ospf_packet::packet;
+use ospf_packet::packet::{self, options::OptionExt};
 use tokio::time::sleep;
 
 use super::{AInterface, Interface, NetType};
 use crate::{
-    constant::AllSPFRouters,
-    neighbor::{Neighbor, NeighborEvent, NeighborState},
-    sender::send_packet,
-    util::hex2ip,
+    constant::AllSPFRouters, log_error, must, neighbor::{Neighbor, NeighborEvent, NeighborState}, sender::send_packet, util::hex2ip
 };
 
 #[cfg(debug_assertions)]
@@ -66,9 +63,7 @@ impl InterfaceEvent for AInterface {
     async fn interface_up(self) {
         #[cfg(debug_assertions)]
         log_event("interface_up", self.read().await.deref());
-        if self.read().await.state != InterfaceState::Down {
-            return;
-        }
+        must!(self.read().await.state == InterfaceState::Down);
         let mut interface = self.write().await;
         let iface = interface.get_network_interface();
         interface.net_type = if iface.is_point_to_point() && iface.is_multicast() {
@@ -100,24 +95,19 @@ impl InterfaceEvent for AInterface {
     async fn wait_timer(self) {
         #[cfg(debug_assertions)]
         log_event("wait_timer", self.read().await.deref());
-        if self.read().await.state != InterfaceState::Waiting {
-            return;
-        }
+        must!(self.read().await.state == InterfaceState::Waiting);
         select_dr(self.clone()).await;
         #[cfg(debug_assertions)]
         log_state(InterfaceState::Waiting, self.read().await.deref());
     }
 
     async fn backup_seen(self) {
-        let interface = self.read().await;
         #[cfg(debug_assertions)]
-        log_event("backup_seen", interface.deref());
-        if interface.state != InterfaceState::Waiting {
-            return;
-        }
+        log_event("backup_seen", self.read().await.deref());
+        must!(self.read().await.state == InterfaceState::Waiting);
         select_dr(self.clone()).await;
         #[cfg(debug_assertions)]
-        log_state(InterfaceState::Waiting, interface.deref());
+        log_state(InterfaceState::Waiting, self.read().await.deref());
     }
 
     async fn neighbor_change(self) {
@@ -125,12 +115,8 @@ impl InterfaceEvent for AInterface {
         #[cfg(debug_assertions)]
         log_event("neighbor_change", interface.deref());
         let old = interface.state;
-        if !matches!(
-            old,
-            InterfaceState::DROther | InterfaceState::Backup | InterfaceState::DR
-        ) {
-            return;
-        }
+        use InterfaceState::*;
+        must!(matches!(old, DROther | Backup | DR));
         select_dr(self.clone()).await;
         #[cfg(debug_assertions)]
         log_state(old, interface.deref());
@@ -153,9 +139,7 @@ impl InterfaceEvent for AInterface {
         #[cfg(debug_assertions)]
         log_event("unloop_ind", interface.deref());
         let old = interface.state;
-        if old != InterfaceState::Loopback {
-            return;
-        }
+        must!(old == InterfaceState::Loopback);
         interface.state = InterfaceState::Down;
         #[cfg(debug_assertions)]
         log_state(old, interface.deref());
@@ -189,16 +173,23 @@ async fn send_hello(interface: AInterface) {
     set_hello_timer(interface.write().await.deref_mut(), interface.clone());
     // second: send hello packet
     let ifr = interface.read().await;
-    let packet = packet::HelloPacket {
+    let mut packet = packet::HelloPacket {
         network_mask: ifr.ip_mask,
         hello_interval: ifr.hello_interval,
-        options: packet::options::E,
+        options: 0,
         router_priority: ifr.router_priority,
-        router_dead_interval: ifr.hello_interval as u32 * 4,
+        router_dead_interval: ifr.dead_interval,
         designated_router: ifr.dr,
         backup_designated_router: ifr.bdr,
-        neighbors: ifr.neighbors.keys().cloned().collect(),
+        neighbors: ifr
+            .neighbors
+            .values()
+            .map(|n| executor::block_on(n.read()).router_id)
+            .collect(),
     };
+    if ifr.external_routing {
+        packet.set(packet::options::E);
+    }
     drop(ifr);
     send_packet(interface, &packet, AllSPFRouters).await;
 }
@@ -258,8 +249,8 @@ async fn select_dr(interface: AInterface) {
     loop {
         // step2: select bdr
         let bdr = {
-            let can: Vec<_> = can.iter().filter(|v| v.dr != v.id).copied().collect();
-            let vec: Vec<_> = can.iter().filter(|v| v.bdr == v.id).copied().collect();
+            let can: Vec<_> = can.iter().filter(|v| v.dr != v.ip).copied().collect();
+            let vec: Vec<_> = can.iter().filter(|v| v.bdr == v.ip).copied().collect();
             if vec.is_empty() { can } else { vec }
                 .iter()
                 .max_by(cmp)
@@ -268,7 +259,7 @@ async fn select_dr(interface: AInterface) {
         };
         // step3: select dr
         let dr = {
-            let vec: Vec<_> = can.iter().filter(|v| v.dr == v.id).copied().collect();
+            let vec: Vec<_> = can.iter().filter(|v| v.dr == v.ip).copied().collect();
             vec.iter().max_by(cmp).map(|v| v.ip).unwrap_or(bdr)
         };
         let bdr = if dr == bdr { hex2ip(0) } else { bdr };
@@ -287,7 +278,7 @@ async fn select_dr(interface: AInterface) {
     // step5: state change
     {
         let mut this = interface.write().await;
-        this.state = if this.is_dr(){
+        this.state = if this.is_dr() {
             InterfaceState::DR
         } else if this.is_bdr() {
             InterfaceState::Backup
@@ -297,10 +288,13 @@ async fn select_dr(interface: AInterface) {
     }
     // step6: send hello packet
     if interface.read().await.net_type == NetType::NBMA {
-        todo!()
+        log_error!("NBMA not implemented");
     }
     // step7: AdjOk?
-    for neighbor in interface.read().await.neighbors.values() {
-        neighbor.clone().adj_ok().await;
-    }
+    interface
+        .read()
+        .await
+        .neighbors
+        .values()
+        .for_each(|n| executor::block_on(n.clone().adj_ok()));
 }

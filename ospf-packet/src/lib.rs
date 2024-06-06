@@ -3,11 +3,12 @@ pub mod lsa;
 pub mod packet;
 
 pub use bits::{FromBuf, ToBytes, ToBytesMut};
+pub use packet::message_type_string;
 
 use std::io;
 use std::io::ErrorKind;
 use std::mem;
-use std::net::{self, IpAddr};
+use std::net::{self, IpAddr, Ipv4Addr};
 use std::time::Duration;
 
 use pnet::packet::ipv4::Ipv4Packet;
@@ -100,14 +101,19 @@ macro_rules! ospf_fmt {
     };
 }
 
+pub const fn hex2ip(hex: u32) -> Ipv4Addr {
+    let bytes = hex.to_be_bytes();
+    Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])
+}
+
 impl std::fmt::Display for OspfPacket<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f, ospf_fmt!(),
             self.get_version(),
-            self.get_message_type(),
+            message_type_string(self.get_message_type()),
             self.get_length(),
-            self.get_router_id(),
+            hex2ip(self.get_router_id()),
             self.get_area_id(),
             self.get_checksum(),
             self.get_au_type(),

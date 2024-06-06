@@ -13,7 +13,7 @@ use ospf_packet::{
 };
 use tokio::sync::RwLock;
 
-use crate::interface::Interface;
+use crate::interface::{Interface, NetType};
 use crate::log_error;
 use crate::{capture::OspfHandler, util::ip2hex};
 use crate::{
@@ -29,7 +29,11 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>) -> OspfHandler {
     Box::new(move |src, dest, packet| {
         // debug
         #[cfg(debug_assertions)]
-        crate::capture::echo_handler(src, dest, packet.to_immutable());
+        crate::log!(
+            "packet received: {} ({} bytes)",
+            message_type_string(packet.get_message_type()),
+            packet.get_length()
+        );
         // the src & dest has already checked
         if !packet.auto_test_checksum() || packet.get_version() != 2 {
             return;
@@ -53,13 +57,17 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>) -> OspfHandler {
                 _ => todo!(), //todo implement other au type
             }
             let payload = &mut packet.payload.as_slice();
-            let router_id = hex2ip(packet.router_id);
+            let mut router_id = hex2ip(packet.router_id);
+            let mut ip = src;
+            if matches!(iface.net_type, NetType::P2P | NetType::Virtual) {
+                std::mem::swap(&mut router_id, &mut ip);
+            }
             let neighbor = interface
                 .read()
                 .await
-                .get_neighbor(router_id)
+                .get_neighbor(ip)
                 .await
-                .unwrap_or(Neighbor::new(&interface, router_id, src));
+                .unwrap_or(Neighbor::new(&interface, router_id, ip));
             drop(iface); // release the lock
             match packet.message_type {
                 HELLO_PACKET => handle::<HelloPacket>(interface, neighbor, payload).await,

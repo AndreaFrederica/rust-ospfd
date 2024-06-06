@@ -15,7 +15,6 @@ pub struct Neighbor {
     pub interface: WInterface,
     pub state: NeighborState,
     pub inactive_timer: TimerHandle,
-    pub dead_interval: u32,
     pub master: bool,
     pub dd_seq_num: u32,
     pub dd_last_packet: u32,
@@ -38,7 +37,6 @@ impl Neighbor {
             interface: Arc::downgrade(&interface),
             state: NeighborState::Down,
             inactive_timer: None,
-            dead_interval: 0,
             master: false,
             dd_seq_num: 0,
             dd_last_packet: 0,
@@ -59,6 +57,47 @@ impl Neighbor {
         todo!("reset lsa database");
     }
 
+    pub fn is_dr(&self) -> bool {
+        self.ip_addr == self.dr
+    }
+
+    pub fn is_bdr(&self) -> bool {
+        self.ip_addr == self.bdr
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NeighborSubStruct {
+    pub state: NeighborState,
+    pub master: bool,
+    pub dd_seq_num: u32,
+    pub dd_last_packet: u32,
+    pub router_id: Ipv4Addr,
+    pub priority: u8,
+    pub ip_addr: Ipv4Addr,
+    pub option: u8,
+    pub dr: Ipv4Addr,
+    pub bdr: Ipv4Addr,
+}
+
+impl From<&Neighbor> for NeighborSubStruct {
+    fn from(value: &Neighbor) -> Self {
+        Self {
+            state: value.state,
+            master: value.master,
+            dd_seq_num: value.dd_seq_num,
+            dd_last_packet: value.dd_last_packet,
+            router_id: value.router_id,
+            priority: value.priority,
+            ip_addr: value.ip_addr,
+            option: value.option,
+            dr: value.dr,
+            bdr: value.bdr,
+        }
+    }
+}
+
+impl NeighborSubStruct {
     pub fn is_dr(&self) -> bool {
         self.ip_addr == self.dr
     }
