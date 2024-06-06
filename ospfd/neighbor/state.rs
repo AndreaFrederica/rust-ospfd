@@ -3,7 +3,7 @@ use std::ops::Deref;
 use futures::executor;
 
 use super::{ANeighbor, Neighbor};
-use crate::{interface::NetType, log_error, log_success};
+use crate::{interface::NetType, log_error, log_success, must};
 
 #[cfg(debug_assertions)]
 use crate::log;
@@ -83,9 +83,7 @@ impl NeighborEvent for ANeighbor {
         #[cfg(debug_assertions)]
         log_event("two_way_received", self.read().await.deref());
         let old = self.read().await.state;
-        if old != NeighborState::Init {
-            return;
-        }
+        must!(old == NeighborState::Init);
         let mut this = self.write().await;
         this.state = if judge_connect(&this).await {
             NeighborState::ExStart
@@ -100,22 +98,33 @@ impl NeighborEvent for ANeighbor {
     async fn negotiation_done(self) {
         #[cfg(debug_assertions)]
         log_event("negotiation_done", self.read().await.deref());
-        todo!("negotiation_done")
+        must!(self.read().await.state == NeighborState::ExStart);
+        //todo summary lsa
+        log_error!("todo! negotiation_done");
+        self.write().await.state = NeighborState::Exchange;
+        log_state(NeighborState::ExStart, self.read().await.deref());
     }
 
     async fn exchange_done(self) {
         #[cfg(debug_assertions)]
         log_event("exchange_done", self.read().await.deref());
-        todo!("exchange_done")
+        must!(self.read().await.state == NeighborState::Exchange);
+        if self.read().await.ls_request_list.is_empty() {
+            self.write().await.state = NeighborState::Full;
+        } else {
+            self.write().await.state = NeighborState::Loading;
+            //todo send ls request
+            //todo after receive ls update, call loading_done
+            log_error!("todo! send ls request");
+        }
+        log_state(NeighborState::Exchange, self.read().await.deref());
     }
 
     async fn bad_ls_req(self) {
         #[cfg(debug_assertions)]
         log_event("bad_ls_req", self.read().await.deref());
         let old = self.read().await.state;
-        if old < NeighborState::Exchange {
-            return;
-        }
+        must!(old >= NeighborState::Exchange);
         self.write().await.reset();
         self.write().await.state = NeighborState::ExStart;
         ex_start(self.clone()).await;
@@ -125,9 +134,7 @@ impl NeighborEvent for ANeighbor {
     async fn loading_done(self) {
         #[cfg(debug_assertions)]
         log_event("loading_done", self.read().await.deref());
-        if self.read().await.state != NeighborState::Loading {
-            return;
-        }
+        must!(self.read().await.state == NeighborState::Loading);
         self.write().await.state = NeighborState::Full;
         log_state(NeighborState::Loading, self.read().await.deref());
     }
@@ -159,9 +166,7 @@ impl NeighborEvent for ANeighbor {
         #[cfg(debug_assertions)]
         log_event("seq_number_mismatch", self.read().await.deref());
         let old = self.read().await.state;
-        if old < NeighborState::Exchange {
-            return;
-        }
+        must!(old >= NeighborState::Exchange);
         self.write().await.reset();
         self.write().await.state = NeighborState::ExStart;
         ex_start(self.clone()).await;
@@ -172,9 +177,7 @@ impl NeighborEvent for ANeighbor {
         #[cfg(debug_assertions)]
         log_event("one_way_received", self.read().await.deref());
         let old = self.read().await.state;
-        if old < NeighborState::TwoWay {
-            return;
-        }
+        must!(old >= NeighborState::TwoWay);
         self.write().await.reset();
         self.write().await.state = NeighborState::Init;
         log_state(old, self.read().await.deref());
@@ -251,7 +254,7 @@ async fn ex_start(this: ANeighbor) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as u32;
-    this.master = true;
+    this.master = false;
     //todo begin sending dd packet...
     log_error!("todo! send dd packet")
 }

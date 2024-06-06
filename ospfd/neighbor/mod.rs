@@ -3,7 +3,7 @@ use std::{net::Ipv4Addr, sync::Arc};
 
 pub use state::*;
 
-use ospf_packet::lsa::Lsa;
+use ospf_packet::{lsa::Lsa, packet::DBDescription};
 use tokio::sync::RwLock;
 
 use crate::{interface::{AInterface, WInterface}, util::hex2ip};
@@ -15,9 +15,10 @@ pub struct Neighbor {
     pub interface: WInterface,
     pub state: NeighborState,
     pub inactive_timer: TimerHandle,
+    #[doc = "if the neighbor is master"]
     pub master: bool,
     pub dd_seq_num: u32,
-    pub dd_last_packet: u32,
+    pub dd_last_packet: DdPacketCache,
     pub router_id: Ipv4Addr,
     pub priority: u8,
     pub ip_addr: Ipv4Addr,
@@ -39,7 +40,7 @@ impl Neighbor {
             inactive_timer: None,
             master: false,
             dd_seq_num: 0,
-            dd_last_packet: 0,
+            dd_last_packet: DdPacketCache::default(),
             router_id,
             priority: 0,
             ip_addr,
@@ -54,7 +55,9 @@ impl Neighbor {
     }
 
     pub fn reset(&mut self) {
-        todo!("reset lsa database");
+        self.ls_retransmission_list.clear();
+        self.db_summary_list.clear();
+        self.ls_request_list.clear();
     }
 
     pub fn is_dr(&self) -> bool {
@@ -66,12 +69,42 @@ impl Neighbor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DdPacketCache {
+    pub sequence_number: u32,
+    pub init: bool,
+    pub more: bool,
+    pub master: bool,
+}
+
+impl From<&DBDescription> for DdPacketCache {
+    fn from(value: &DBDescription) -> Self {
+        Self {
+            sequence_number: value.db_sequence_number,
+            init: value.init != 0,
+            more: value.more != 0,
+            master: value.master != 0,
+        }
+    }
+}
+
+impl DdPacketCache {
+    pub fn default() -> Self {
+        Self {
+            sequence_number: 0,
+            init: false,
+            more: false,
+            master: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NeighborSubStruct {
     pub state: NeighborState,
     pub master: bool,
     pub dd_seq_num: u32,
-    pub dd_last_packet: u32,
+    pub dd_last_packet: DdPacketCache,
     pub router_id: Ipv4Addr,
     pub priority: u8,
     pub ip_addr: Ipv4Addr,

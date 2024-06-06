@@ -13,8 +13,8 @@ pub fn listen_interface(interface: WInterface) {
             } else {
                 interface.interface_up().await;
             }
-            // check interface every 2 seconds
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            // check interface every 8 seconds
+            tokio::time::sleep(tokio::time::Duration::from_secs(8)).await;
         }
     });
 }

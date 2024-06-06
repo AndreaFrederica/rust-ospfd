@@ -25,7 +25,6 @@ pub async fn handle(iface: AInterface, src: ANeighbor, packet: HelloPacket) {
     {
         // neighbor structure
         let mut neighbor = src.write().await;
-        neighbor.option = packet.options;
         neighbor.dr = packet.designated_router;
         neighbor.bdr = packet.backup_designated_router;
         neighbor.priority = packet.router_priority;

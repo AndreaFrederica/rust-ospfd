@@ -16,6 +16,19 @@ macro_rules! must {
             return;
         }
     };
+    ($x:expr; dbg: $($arg:tt)*) => {
+        if !($x) {
+            #[cfg(debug_assertions)]
+            crate::log_warning!($($arg)*);
+            return;
+        }
+    };
+    ($x:expr; $($arg:tt)*) => {
+        if !($x) {
+            crate::log_warning!($($arg)*);
+            return;
+        }
+    };
 }
 
 #[cfg(test)]

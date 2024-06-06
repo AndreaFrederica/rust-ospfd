@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::net::Ipv4Addr;
 
 use super::bits::*;
@@ -5,6 +6,7 @@ use super::lsa::*;
 
 use bytes::Buf;
 use ospf_macros::raw_packet;
+use pnet_macros_support::types::*;
 
 pub mod types {
     pub const HELLO_PACKET: u8 = 1;
@@ -78,7 +80,10 @@ pub struct HelloPacket {
 pub struct DBDescription {
     pub interface_mtu: u16,
     pub options: u8,
-    pub db_description: u8,
+    pub _zeros: PhantomData<u5>,
+    pub init: u1,
+    pub more: u1,
+    pub master: u1,
     pub db_sequence_number: u32,
     pub lsa_header: Vec<LsaHeader>,
 }
