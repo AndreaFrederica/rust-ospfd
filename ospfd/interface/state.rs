@@ -10,11 +10,15 @@ use tokio::time::sleep;
 
 use super::{AInterface, Interface, NetType};
 use crate::{
-    constant::AllSPFRouters, log_error, must, neighbor::{Neighbor, NeighborEvent, NeighborState}, sender::send_packet, util::hex2ip
+    constant::AllSPFRouters,
+    log_error, log_success, must,
+    neighbor::{Neighbor, NeighborEvent, NeighborState},
+    sender::send_packet,
+    util::hex2ip,
 };
 
 #[cfg(debug_assertions)]
-use crate::{log, log_success};
+use crate::log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterfaceState {
@@ -49,7 +53,6 @@ fn log_event(event: &str, interface: &Interface) {
     );
 }
 
-#[cfg(debug_assertions)]
 fn log_state(old: InterfaceState, interface: &Interface) {
     log_success!(
         "interface {}'s state changed: {:?} -> {:?}",
@@ -88,7 +91,6 @@ impl InterfaceEvent for AInterface {
             InterfaceState::Waiting
         };
         tokio::spawn(send_hello(self.clone()));
-        #[cfg(debug_assertions)]
         log_state(InterfaceState::Down, interface.deref());
     }
 
@@ -97,7 +99,6 @@ impl InterfaceEvent for AInterface {
         log_event("wait_timer", self.read().await.deref());
         must!(self.read().await.state == InterfaceState::Waiting);
         select_dr(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(InterfaceState::Waiting, self.read().await.deref());
     }
 
@@ -106,7 +107,6 @@ impl InterfaceEvent for AInterface {
         log_event("backup_seen", self.read().await.deref());
         must!(self.read().await.state == InterfaceState::Waiting);
         select_dr(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(InterfaceState::Waiting, self.read().await.deref());
     }
 
@@ -118,7 +118,6 @@ impl InterfaceEvent for AInterface {
         use InterfaceState::*;
         must!(matches!(old, DROther | Backup | DR));
         select_dr(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(old, interface.deref());
     }
 
@@ -126,11 +125,9 @@ impl InterfaceEvent for AInterface {
         let mut interface = self.write().await;
         #[cfg(debug_assertions)]
         log_event("neighbor_change", interface.deref());
-        #[cfg(debug_assertions)]
         let old = interface.state;
         interface.reset();
         interface.state = InterfaceState::Loopback;
-        #[cfg(debug_assertions)]
         log_state(old, interface.deref());
     }
 
@@ -141,7 +138,6 @@ impl InterfaceEvent for AInterface {
         let old = interface.state;
         must!(old == InterfaceState::Loopback);
         interface.state = InterfaceState::Down;
-        #[cfg(debug_assertions)]
         log_state(old, interface.deref());
     }
 
@@ -149,11 +145,9 @@ impl InterfaceEvent for AInterface {
         let mut interface = self.write().await;
         #[cfg(debug_assertions)]
         log_event("interface_down", interface.deref());
-        #[cfg(debug_assertions)]
         let old = interface.state;
         interface.reset();
         interface.state = InterfaceState::Down;
-        #[cfg(debug_assertions)]
         log_state(old, interface.deref());
     }
 }

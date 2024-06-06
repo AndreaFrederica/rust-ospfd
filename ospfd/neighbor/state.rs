@@ -1,13 +1,12 @@
+use std::ops::Deref;
+
 use futures::executor;
 
 use super::{ANeighbor, Neighbor};
-
-use crate::{interface::NetType, log_error};
+use crate::{interface::NetType, log_error, log_success};
 
 #[cfg(debug_assertions)]
-use crate::{log, log_success};
-#[cfg(debug_assertions)]
-use std::ops::Deref;
+use crate::log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NeighborState {
@@ -49,7 +48,6 @@ fn log_event(event: &str, neighbor: &Neighbor) {
     );
 }
 
-#[cfg(debug_assertions)]
 fn log_state(old: NeighborState, neighbor: &Neighbor) {
     if old == neighbor.state {
         return;
@@ -71,7 +69,6 @@ impl NeighborEvent for ANeighbor {
             self.write().await.state = NeighborState::Init;
         }
         reset_timer(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
@@ -97,7 +94,6 @@ impl NeighborEvent for ANeighbor {
         };
         drop(this);
         ex_start(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
@@ -123,7 +119,6 @@ impl NeighborEvent for ANeighbor {
         self.write().await.reset();
         self.write().await.state = NeighborState::ExStart;
         ex_start(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
@@ -134,7 +129,6 @@ impl NeighborEvent for ANeighbor {
             return;
         }
         self.write().await.state = NeighborState::Full;
-        #[cfg(debug_assertions)]
         log_state(NeighborState::Loading, self.read().await.deref());
     }
 
@@ -158,7 +152,6 @@ impl NeighborEvent for ANeighbor {
                 this.reset();
             }
         }
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
@@ -172,7 +165,6 @@ impl NeighborEvent for ANeighbor {
         self.write().await.reset();
         self.write().await.state = NeighborState::ExStart;
         ex_start(self.clone()).await;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
@@ -185,42 +177,35 @@ impl NeighborEvent for ANeighbor {
         }
         self.write().await.reset();
         self.write().await.state = NeighborState::Init;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
     async fn kill_nbr(self) {
         #[cfg(debug_assertions)]
         log_event("kill_nbr", self.read().await.deref());
-        #[cfg(debug_assertions)]
         let old = self.read().await.state;
         self.write().await.reset();
         self.write().await.inactive_timer.take().map(|f| f.abort());
         self.write().await.state = NeighborState::Down;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
     async fn inactivity_timer(self) {
         #[cfg(debug_assertions)]
         log_event("inactivity_timer", self.read().await.deref());
-        #[cfg(debug_assertions)]
         let old = self.read().await.state;
         self.write().await.reset();
         self.write().await.state = NeighborState::Down;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 
     async fn ll_down(self) {
         #[cfg(debug_assertions)]
         log_event("ll_down", self.read().await.deref());
-        #[cfg(debug_assertions)]
         let old = self.read().await.state;
         self.write().await.reset();
         self.write().await.inactive_timer.take().map(|f| f.abort());
         self.write().await.state = NeighborState::Down;
-        #[cfg(debug_assertions)]
         log_state(old, self.read().await.deref());
     }
 }
