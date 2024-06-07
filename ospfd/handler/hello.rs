@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use ospf_macros::define;
 use ospf_packet::packet::{self, options::OptionExt, HelloPacket};
 
 use crate::{
@@ -10,9 +11,7 @@ use crate::{
     util::hex2ip,
 };
 
-// @define iface src.get_interface()
-// @define neighbor src.get_neighbor()
-
+#[define(iface => src.get_interface(); neighbor => src.get_neighbor())]
 pub async fn handle(mut src: RefNeighbor<'_>, packet: HelloPacket) {
     // must
     must!(iface.hello_interval == packet.hello_interval);

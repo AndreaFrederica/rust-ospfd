@@ -1,4 +1,5 @@
 mod decorator;
+mod define;
 
 use proc_macro::{self, TokenStream};
 use quote::quote;
@@ -28,7 +29,6 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn raw_packet(_attrs: TokenStream, code: TokenStream) -> TokenStream {
-    // let _attrs = parse_macro_input!(attrs as AttributeArgs);
     let input = parse_macro_input!(code as DeriveInput);
     // enhancement: if input already has Clone and/or Debug, do not add them
     let s = quote! {
@@ -36,4 +36,10 @@ pub fn raw_packet(_attrs: TokenStream, code: TokenStream) -> TokenStream {
         #input
     };
     s.into()
+}
+
+#[proc_macro_attribute]
+pub fn define(attrs: TokenStream, code: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attrs with define::DefineAttr::parse);
+    attrs.process_define(code.into()).into()
 }
