@@ -1,9 +1,7 @@
-use std::ops::Deref;
+use std::ops::DerefMut;
 
-use futures::executor;
-
-use super::{ANeighbor, Neighbor};
-use crate::{interface::NetType, log_error, log_success, must};
+use super::{Neighbor, RefNeighbor};
+use crate::{guard, interface::NetType, log_error, log_success, must};
 
 #[cfg(debug_assertions)]
 use crate::log;
@@ -23,19 +21,19 @@ pub enum NeighborState {
 // helper trait for event handling
 #[allow(unused)]
 pub trait NeighborEvent: Send {
-    async fn hello_receive(self);
-    async fn start(self);
-    async fn two_way_received(self);
-    async fn negotiation_done(self);
-    async fn exchange_done(self);
-    async fn bad_ls_req(self);
-    async fn loading_done(self);
-    async fn adj_ok(self);
-    async fn seq_number_mismatch(self);
-    async fn one_way_received(self);
-    async fn kill_nbr(self);
-    async fn inactivity_timer(self);
-    async fn ll_down(self);
+    async fn hello_receive(&mut self);
+    async fn start(&mut self);
+    async fn two_way_received(&mut self);
+    async fn negotiation_done(&mut self);
+    async fn exchange_done(&mut self);
+    async fn bad_ls_req(&mut self);
+    async fn loading_done(&mut self);
+    async fn adj_ok(&mut self);
+    async fn seq_number_mismatch(&mut self);
+    async fn one_way_received(&mut self);
+    async fn kill_nbr(&mut self);
+    async fn inactivity_timer(&mut self);
+    async fn ll_down(&mut self);
 }
 
 #[cfg(debug_assertions)]
@@ -60,195 +58,192 @@ fn log_state(old: NeighborState, neighbor: &Neighbor) {
     );
 }
 
-impl NeighborEvent for ANeighbor {
-    async fn hello_receive(self) {
+impl NeighborEvent for RefNeighbor<'_> {
+    async fn hello_receive(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("hello_receive", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("hello_receive", self.get_neighbor());
+        let old = self.get_neighbor().state;
         if old <= NeighborState::Attempt {
-            self.write().await.state = NeighborState::Init;
+            self.get_neighbor().state = NeighborState::Init;
         }
-        reset_timer(self.clone()).await;
-        log_state(old, self.read().await.deref());
+        reset_timer(self).await;
+        log_state(old, self.get_neighbor());
     }
 
-    async fn start(self) {
+    async fn start(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("start", self.read().await.deref());
+        log_event("start", self.get_neighbor());
         //todo with NBMA
         todo!("start NBMA")
     }
 
-    async fn two_way_received(self) {
+    async fn two_way_received(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("two_way_received", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("two_way_received", self.get_neighbor());
+        let old = self.get_neighbor().state;
         must!(old == NeighborState::Init);
-        let mut this = self.write().await;
-        this.state = if judge_connect(&this).await {
+        self.get_neighbor().state = if judge_connect(self).await {
             NeighborState::ExStart
         } else {
             NeighborState::TwoWay
         };
-        drop(this);
-        ex_start(self.clone()).await;
-        log_state(old, self.read().await.deref());
+        ex_start(self.get_neighbor()).await;
+        log_state(old, self.get_neighbor());
     }
 
-    async fn negotiation_done(self) {
+    async fn negotiation_done(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("negotiation_done", self.read().await.deref());
-        must!(self.read().await.state == NeighborState::ExStart);
+        log_event("negotiation_done", this);
+        must!(this.state == NeighborState::ExStart);
         //todo summary lsa
         log_error!("todo! negotiation_done");
-        self.write().await.state = NeighborState::Exchange;
-        log_state(NeighborState::ExStart, self.read().await.deref());
+        this.state = NeighborState::Exchange;
+        log_state(NeighborState::ExStart, this);
     }
 
-    async fn exchange_done(self) {
+    async fn exchange_done(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("exchange_done", self.read().await.deref());
-        must!(self.read().await.state == NeighborState::Exchange);
-        if self.read().await.ls_request_list.is_empty() {
-            self.write().await.state = NeighborState::Full;
+        log_event("exchange_done", this);
+        must!(this.state == NeighborState::Exchange);
+        if this.ls_request_list.is_empty() {
+            this.state = NeighborState::Full;
         } else {
-            self.write().await.state = NeighborState::Loading;
+            this.state = NeighborState::Loading;
             //todo send ls request
             //todo after receive ls update, call loading_done
             log_error!("todo! send ls request");
         }
-        log_state(NeighborState::Exchange, self.read().await.deref());
+        log_state(NeighborState::Exchange, this);
     }
 
-    async fn bad_ls_req(self) {
+    async fn bad_ls_req(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("bad_ls_req", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("bad_ls_req", this);
+        let old = this.state;
         must!(old >= NeighborState::Exchange);
-        self.write().await.reset();
-        self.write().await.state = NeighborState::ExStart;
-        ex_start(self.clone()).await;
-        log_state(old, self.read().await.deref());
+        this.reset();
+        this.state = NeighborState::ExStart;
+        ex_start(this).await;
+        log_state(old, this);
     }
 
-    async fn loading_done(self) {
+    async fn loading_done(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("loading_done", self.read().await.deref());
-        must!(self.read().await.state == NeighborState::Loading);
-        self.write().await.state = NeighborState::Full;
-        log_state(NeighborState::Loading, self.read().await.deref());
+        log_event("loading_done", this);
+        must!(this.state == NeighborState::Loading);
+        this.state = NeighborState::Full;
+        log_state(NeighborState::Loading, this);
     }
 
-    async fn adj_ok(self) {
+    async fn adj_ok(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("adj_ok", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("adj_ok", self.get_neighbor());
+        let old = self.get_neighbor().state;
         if old == NeighborState::TwoWay {
-            let mut this = self.write().await;
-            this.state = if judge_connect(&this).await {
+            self.get_neighbor().state = if judge_connect(self).await {
                 NeighborState::ExStart
             } else {
                 NeighborState::TwoWay
             };
-            drop(this);
-            ex_start(self.clone()).await;
+            ex_start(self.get_neighbor()).await;
         } else if old >= NeighborState::ExStart {
-            let mut this = self.write().await;
-            if !judge_connect(&this).await {
-                this.state = NeighborState::TwoWay;
-                this.reset();
+            if !judge_connect(self).await {
+                self.get_neighbor().state = NeighborState::TwoWay;
+                self.get_neighbor().reset();
             }
         }
-        log_state(old, self.read().await.deref());
+        log_state(old, self.get_neighbor());
     }
 
-    async fn seq_number_mismatch(self) {
+    async fn seq_number_mismatch(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("seq_number_mismatch", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("seq_number_mismatch", this);
+        let old = this.state;
         must!(old >= NeighborState::Exchange);
-        self.write().await.reset();
-        self.write().await.state = NeighborState::ExStart;
-        ex_start(self.clone()).await;
-        log_state(old, self.read().await.deref());
+        this.reset();
+        this.state = NeighborState::ExStart;
+        ex_start(this).await;
+        log_state(old, this);
     }
 
-    async fn one_way_received(self) {
+    async fn one_way_received(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("one_way_received", self.read().await.deref());
-        let old = self.read().await.state;
+        log_event("one_way_received", this);
+        let old = this.state;
         must!(old >= NeighborState::TwoWay);
-        self.write().await.reset();
-        self.write().await.state = NeighborState::Init;
-        log_state(old, self.read().await.deref());
+        this.reset();
+        this.state = NeighborState::Init;
+        log_state(old, this);
     }
 
-    async fn kill_nbr(self) {
+    async fn kill_nbr(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("kill_nbr", self.read().await.deref());
-        let old = self.read().await.state;
-        self.write().await.reset();
-        self.write().await.inactive_timer.abort();
-        self.write().await.state = NeighborState::Down;
-        log_state(old, self.read().await.deref());
+        log_event("kill_nbr", this);
+        let old = this.state;
+        this.reset();
+        this.inactive_timer.abort();
+        this.state = NeighborState::Down;
+        log_state(old, this);
     }
 
-    async fn inactivity_timer(self) {
+    async fn inactivity_timer(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("inactivity_timer", self.read().await.deref());
-        let old = self.read().await.state;
-        self.write().await.reset();
-        self.write().await.state = NeighborState::Down;
-        log_state(old, self.read().await.deref());
+        log_event("inactivity_timer", this);
+        let old = this.state;
+        this.reset();
+        this.state = NeighborState::Down;
+        log_state(old, this);
     }
 
-    async fn ll_down(self) {
+    async fn ll_down(&mut self) {
+        let this = self.get_neighbor();
         #[cfg(debug_assertions)]
-        log_event("ll_down", self.read().await.deref());
-        let old = self.read().await.state;
-        self.write().await.reset();
-        self.write().await.inactive_timer.abort();
-        self.write().await.state = NeighborState::Down;
-        log_state(old, self.read().await.deref());
+        log_event("ll_down", this);
+        let old = this.state;
+        this.reset();
+        this.inactive_timer.abort();
+        this.state = NeighborState::Down;
+        log_state(old, this);
     }
 }
 
-async fn reset_timer(this: ANeighbor) {
-    let dead_interval = this
-        .read()
-        .await
-        .interface
-        .upgrade()
-        .map(|i| executor::block_on(i.read()).dead_interval)
-        .unwrap_or(1) as u64;
-    let cloned = this.clone();
-    let mut this = this.write().await;
+async fn reset_timer(this: &mut RefNeighbor<'_>) {
+    let dead_interval = this.get_interface().dead_interval as u64;
+    let iface = this.get_interface().me.clone();
+    let this = this.get_neighbor();
+    let ip = this.ip_addr;
     this.inactive_timer.abort();
     this.inactive_timer = tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(dead_interval)).await;
-        cloned.inactivity_timer().await;
+        guard!(Some(iface) = iface.upgrade());
+        let mut iface = iface.write().await;
+        RefNeighbor::from(iface.deref_mut(), ip)
+            .unwrap()
+            .inactivity_timer()
+            .await;
     });
 }
 
-async fn judge_connect(this: &Neighbor) -> bool {
-    let Some(interface) = this.interface.upgrade() else {
-        return false;
-    };
-    let interface = interface.read().await;
+async fn judge_connect(this: &mut RefNeighbor<'_>) -> bool {
     matches!(
-        interface.net_type,
+        this.get_interface().net_type,
         NetType::P2P | NetType::P2MP | NetType::Virtual
-    ) || interface.is_bdr()
-        || interface.is_dr()
-        || this.is_bdr()
-        || this.is_dr()
+    ) || this.get_interface().is_bdr()
+        || this.get_interface().is_dr()
+        || this.get_neighbor().is_bdr()
+        || this.get_neighbor().is_dr()
 }
 
-async fn ex_start(this: ANeighbor) {
-    let mut this = this.write().await;
-    if !(this.state == NeighborState::ExStart && this.dd_seq_num == 0) {
-        return;
-    }
+async fn ex_start(this: &mut Neighbor) {
+    must!(this.state == NeighborState::ExStart && this.dd_seq_num == 0);
     // first time
     this.dd_seq_num = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

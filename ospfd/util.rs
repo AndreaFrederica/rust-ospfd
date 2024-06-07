@@ -38,6 +38,35 @@ macro_rules! must {
     };
 }
 
+#[macro_export]
+macro_rules! guard {
+    ($x:pat = $y:expr $(;do:$op:expr)? $(;ret:$val:expr)? ) => {
+        let $x = $y else {
+            $($op;)?
+            return $($val)?;
+        };
+    };
+    ($x:pat = $y:expr; dbg: $($arg:tt)*) => {
+        let $x = $y else {
+            #[cfg(debug_assertions)]
+            crate::log_warning!($($arg)*);
+            return;
+        };
+    };
+    ($x:pat = $y:expr; warning: $($arg:tt)*) => {
+        let $x = $y else {
+            crate::log_warning!($($arg)*);
+            return;
+        };
+    };
+    ($x:pat = $y:expr; error: $($arg:tt)*) => {
+        let $x = $y else {
+            crate::log_error!($($arg)*);
+            return;
+        };
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

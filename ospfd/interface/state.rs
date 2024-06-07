@@ -1,15 +1,18 @@
-use std::{net::Ipv4Addr, ops::Deref, sync::Arc, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
-use futures::executor;
 use ospf_packet::packet::{self, options::OptionExt};
 use tokio::time::sleep;
 
-use super::{AInterface, Interface, NetType};
+use super::{Interface, NetType};
 use crate::{
     constant::AllSPFRouters,
     database::ProtocolDB,
     log_error, log_success, must,
-    neighbor::{Neighbor, NeighborEvent, NeighborState},
+    neighbor::{Neighbor, NeighborEvent, NeighborState, RefNeighbor},
     sender::send_packet,
     util::hex2ip,
 };
@@ -31,13 +34,13 @@ pub enum InterfaceState {
 // helper trait for event handling
 #[allow(unused)]
 pub trait InterfaceEvent: Send {
-    async fn interface_up(self);
-    async fn wait_timer(self);
-    async fn backup_seen(self);
-    async fn neighbor_change(self);
-    async fn loop_ind(self);
-    async fn unloop_ind(self);
-    async fn interface_down(self);
+    async fn interface_up(&mut self);
+    async fn wait_timer(&mut self);
+    async fn backup_seen(&mut self);
+    async fn neighbor_change(&mut self);
+    async fn loop_ind(&mut self);
+    async fn unloop_ind(&mut self);
+    async fn interface_down(&mut self);
 }
 
 #[cfg(debug_assertions)]
@@ -59,14 +62,13 @@ fn log_state(old: InterfaceState, interface: &Interface) {
     );
 }
 
-impl InterfaceEvent for AInterface {
-    async fn interface_up(self) {
+impl InterfaceEvent for Interface {
+    async fn interface_up(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("interface_up", self.read().await.deref());
-        must!(self.read().await.state == InterfaceState::Down);
-        let mut interface = self.write().await;
-        let iface = interface.get_network_interface();
-        interface.net_type = if iface.is_point_to_point() && iface.is_multicast() {
+        log_event("interface_up", self);
+        must!(self.state == InterfaceState::Down);
+        let iface = self.get_network_interface();
+        self.net_type = if iface.is_point_to_point() && iface.is_multicast() {
             NetType::P2MP
         } else if iface.is_point_to_point() {
             NetType::P2P
@@ -77,116 +79,105 @@ impl InterfaceEvent for AInterface {
         } else {
             NetType::Virtual
         };
-        interface.state = if matches!(
-            interface.net_type,
+        self.state = if matches!(
+            self.net_type,
             NetType::P2P | NetType::P2MP | NetType::Virtual
         ) {
             InterfaceState::PointToPoint
-        } else if interface.router_priority == 0 {
+        } else if self.router_priority == 0 {
             InterfaceState::DROther
         } else {
             InterfaceState::Waiting
         };
-        drop(interface);
-        set_hello_timer(&self).await;
-        log_state(InterfaceState::Down, self.read().await.deref());
+        set_hello_timer(self).await;
+        log_state(InterfaceState::Down, self);
     }
 
-    async fn wait_timer(self) {
+    async fn wait_timer(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("wait_timer", self.read().await.deref());
-        must!(self.read().await.state == InterfaceState::Waiting);
-        select_dr(self.clone()).await;
-        log_state(InterfaceState::Waiting, self.read().await.deref());
+        log_event("wait_timer", self);
+        must!(self.state == InterfaceState::Waiting);
+        select_dr(self).await;
+        log_state(InterfaceState::Waiting, self);
     }
 
-    async fn backup_seen(self) {
+    async fn backup_seen(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("backup_seen", self.read().await.deref());
-        must!(self.read().await.state == InterfaceState::Waiting);
-        select_dr(self.clone()).await;
-        log_state(InterfaceState::Waiting, self.read().await.deref());
+        log_event("backup_seen", self);
+        must!(self.state == InterfaceState::Waiting);
+        select_dr(self).await;
+        log_state(InterfaceState::Waiting, self);
     }
 
-    async fn neighbor_change(self) {
-        let interface = self.read().await;
+    async fn neighbor_change(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("neighbor_change", interface.deref());
-        let old = interface.state;
+        log_event("neighbor_change", self);
+        let old = self.state;
         use InterfaceState::*;
         must!(matches!(old, DROther | Backup | DR));
-        select_dr(self.clone()).await;
-        log_state(old, interface.deref());
+        select_dr(self).await;
+        log_state(old, self);
     }
 
-    async fn loop_ind(self) {
-        let mut interface = self.write().await;
+    async fn loop_ind(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("neighbor_change", interface.deref());
-        let old = interface.state;
-        interface.reset();
-        interface.state = InterfaceState::Loopback;
-        log_state(old, interface.deref());
+        log_event("neighbor_change", self);
+        let old = self.state;
+        self.reset();
+        self.state = InterfaceState::Loopback;
+        log_state(old, self);
     }
 
-    async fn unloop_ind(self) {
-        let mut interface = self.write().await;
+    async fn unloop_ind(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("unloop_ind", interface.deref());
-        let old = interface.state;
+        log_event("unloop_ind", self);
+        let old = self.state;
         must!(old == InterfaceState::Loopback);
-        interface.state = InterfaceState::Down;
-        log_state(old, interface.deref());
+        self.state = InterfaceState::Down;
+        log_state(old, self);
     }
 
-    async fn interface_down(self) {
-        let mut interface = self.write().await;
+    async fn interface_down(&mut self) {
         #[cfg(debug_assertions)]
-        log_event("interface_down", interface.deref());
-        let old = interface.state;
-        interface.reset();
-        interface.state = InterfaceState::Down;
-        log_state(old, interface.deref());
+        log_event("interface_down", self);
+        let old = self.state;
+        self.reset();
+        self.state = InterfaceState::Down;
+        log_state(old, self);
     }
 }
 
-async fn set_hello_timer(interface: &AInterface) {
-    let weak = Arc::downgrade(interface);
-    let mut interface = interface.write().await;
+async fn set_hello_timer(interface: &mut Interface) {
+    let weak = interface.me.clone();
     interface.hello_timer.abort();
     interface.hello_timer = tokio::spawn(async move {
         while let Some(interface) = weak.upgrade() {
-            let hello_interval = interface.read().await.hello_interval as u64;
-            send_hello(interface).await;
+            let mut interface = interface.write().await;
+            let hello_interval = interface.hello_interval as u64;
+            send_hello(interface.deref_mut()).await;
             sleep(Duration::from_secs(hello_interval)).await;
         }
         crate::log_warning!("interface is dropped, hello timer stopped");
     });
 }
 
-async fn send_hello(interface: AInterface) {
+async fn send_hello(interface: &mut Interface) {
     // first: shrink neighbors
-    interface.write().await.shrink_neighbors().await;
+    interface.shrink_neighbors();
     // second: send hello packet
-    let ifr = interface.read().await;
     let mut packet = packet::HelloPacket {
-        network_mask: ifr.ip_mask,
-        hello_interval: ifr.hello_interval,
+        network_mask: interface.ip_mask,
+        hello_interval: interface.hello_interval,
         options: 0,
-        router_priority: ifr.router_priority,
-        router_dead_interval: ifr.dead_interval,
-        designated_router: ifr.dr,
-        backup_designated_router: ifr.bdr,
-        neighbors: ifr
-            .neighbors
-            .values()
-            .map(|n| executor::block_on(n.read()).router_id)
-            .collect(),
+        router_priority: interface.router_priority,
+        router_dead_interval: interface.dead_interval,
+        designated_router: interface.dr,
+        backup_designated_router: interface.bdr,
+        neighbors: interface.neighbors.values().map(|n| n.router_id).collect(),
     };
-    if ifr.external_routing {
+    if interface.external_routing {
         packet.set(packet::options::E);
     }
-    drop(ifr);
     send_packet(interface, &packet, AllSPFRouters).await;
 }
 
@@ -223,18 +214,16 @@ impl From<&Interface> for SelectDr {
     }
 }
 
-async fn select_dr(interface: AInterface) {
+async fn select_dr(interface: &mut Interface) {
     // step1: find all available neighbors
-    let iface = interface.read().await;
-    let mut can: Vec<SelectDr> = iface
+    let mut can: Vec<SelectDr> = interface
         .neighbors
         .values()
-        .filter(|n| executor::block_on(n.read()).state >= NeighborState::TwoWay)
-        .map(|n| executor::block_on(n.read()).deref().into())
+        .filter(|n| n.state >= NeighborState::TwoWay)
+        .map(|n| n.into())
         .collect();
-    can.push(iface.deref().into());
+    can.push(interface.deref().into());
     can = can.into_iter().filter(|v| v.priority > 0).collect();
-    drop(iface);
     let cmp = |x: &&SelectDr, y: &&SelectDr| {
         if x.priority == y.priority {
             x.id.cmp(&y.id)
@@ -259,38 +248,32 @@ async fn select_dr(interface: AInterface) {
             vec.iter().max_by(cmp).map(|v| v.ip).unwrap_or(bdr)
         };
         let bdr = if dr == bdr { hex2ip(0) } else { bdr };
-        let mut this = interface.write().await;
         // step4: state change
-        let new_select = dr == this.ip_addr && !this.is_dr()
-            || bdr == this.ip_addr && !this.is_bdr()
-            || this.is_dr() && dr != this.ip_addr
-            || this.is_bdr() && bdr != this.ip_addr;
-        this.dr = dr;
-        this.bdr = bdr;
+        let new_select = dr == interface.ip_addr && !interface.is_dr()
+            || bdr == interface.ip_addr && !interface.is_bdr()
+            || interface.is_dr() && dr != interface.ip_addr
+            || interface.is_bdr() && bdr != interface.ip_addr;
+        interface.dr = dr;
+        interface.bdr = bdr;
         if !new_select {
             break;
         }
     }
     // step5: state change
-    {
-        let mut this = interface.write().await;
-        this.state = if this.is_dr() {
-            InterfaceState::DR
-        } else if this.is_bdr() {
-            InterfaceState::Backup
-        } else {
-            InterfaceState::DROther
-        };
-    }
+    interface.state = if interface.is_dr() {
+        InterfaceState::DR
+    } else if interface.is_bdr() {
+        InterfaceState::Backup
+    } else {
+        InterfaceState::DROther
+    };
     // step6: send hello packet
-    if interface.read().await.net_type == NetType::NBMA {
+    if interface.net_type == NetType::NBMA {
         log_error!("NBMA not implemented");
     }
     // step7: AdjOk?
-    interface
-        .read()
-        .await
-        .neighbors
-        .values()
-        .for_each(|n| executor::block_on(n.clone().adj_ok()));
+    let keys: Vec<_> = interface.neighbors.keys().cloned().collect();
+    for ip in keys {
+        RefNeighbor::from(interface, ip).unwrap().adj_ok().await;
+    }
 }

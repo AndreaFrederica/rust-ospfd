@@ -1,19 +1,16 @@
+mod pair;
 mod state;
-use std::{net::Ipv4Addr, sync::Arc};
-
+pub use pair::RefNeighbor;
 pub use state::*;
 
-use ospf_packet::{lsa::Lsa, packet::DBDescription};
-use tokio::sync::RwLock;
+use std::net::Ipv4Addr;
 
-use crate::{
-    interface::{AInterface, WInterface},
-    util::hex2ip,
-};
+use ospf_packet::{lsa::Lsa, packet::DBDescription};
+
+use crate::util::hex2ip;
 
 #[derive(Debug)]
 pub struct Neighbor {
-    pub interface: WInterface,
     pub state: NeighborState,
     pub inactive_timer: tokio::task::JoinHandle<()>,
     #[doc = "if the neighbor is master"]
@@ -31,12 +28,9 @@ pub struct Neighbor {
     pub ls_request_list: Vec<Lsa>,
 }
 
-pub type ANeighbor = Arc<RwLock<Neighbor>>;
-
 impl Neighbor {
-    pub fn new(interface: &AInterface, router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> ANeighbor {
-        Arc::new(RwLock::new(Self {
-            interface: Arc::downgrade(&interface),
+    pub fn new(router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> Neighbor {
+        Self {
             state: NeighborState::Down,
             inactive_timer: tokio::spawn(async {}),
             master: false,
@@ -51,7 +45,7 @@ impl Neighbor {
             ls_retransmission_list: Vec::new(),
             db_summary_list: Vec::new(),
             ls_request_list: Vec::new(),
-        }))
+        }
     }
 
     pub fn reset(&mut self) {

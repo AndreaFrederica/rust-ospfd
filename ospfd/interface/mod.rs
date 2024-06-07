@@ -4,7 +4,7 @@ pub use state::*;
 
 use crate::{
     database::ProtocolDB,
-    neighbor::{ANeighbor, NeighborState},
+    neighbor::{Neighbor, NeighborState},
     util::hex2ip,
 };
 
@@ -14,7 +14,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use futures::executor;
 use pnet::{
     datalink::{self, NetworkInterface},
     ipnetwork::IpNetwork,
@@ -26,6 +25,7 @@ use pnet::{
 use tokio::sync::RwLock;
 
 pub struct Interface {
+    pub me: WInterface,
     pub interface_name: String,
     pub sender: TransportSender,
     pub net_type: NetType,
@@ -41,7 +41,7 @@ pub struct Interface {
     pub hello_timer: tokio::task::JoinHandle<()>,
     pub wait_timer: tokio::task::JoinHandle<()>,
     #[doc = "ip -> neighbor (p2p|virtual => ip := router_id)"]
-    pub neighbors: HashMap<Ipv4Addr, ANeighbor>,
+    pub neighbors: HashMap<Ipv4Addr, Neighbor>,
     pub dr: Ipv4Addr,
     pub bdr: Ipv4Addr,
     pub cost: u16,
@@ -70,7 +70,8 @@ impl Interface {
         ip_addr: Ipv4Addr,
         ip_mask: Ipv4Addr,
     ) -> AInterface {
-        let this = Arc::new(RwLock::new(Self {
+        let this = Arc::new_cyclic(|me| RwLock::new(Self {
+            me: me.clone(),
             interface_name,
             sender,
             net_type: NetType::Broadcast,
@@ -131,13 +132,9 @@ impl Interface {
             ))
     }
 
-    pub async fn shrink_neighbors(&mut self) {
+    pub fn shrink_neighbors(&mut self) {
         self.neighbors
-            .retain(|_, n| executor::block_on(n.read()).state != NeighborState::Down);
-    }
-
-    pub async fn get_neighbor(&self, ip: Ipv4Addr) -> Option<ANeighbor> {
-        self.neighbors.get(&ip).cloned()
+            .retain(|_, n| n.state != NeighborState::Down);
     }
 
     pub fn reset(&mut self) {
