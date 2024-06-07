@@ -3,6 +3,7 @@ use std::ops::Deref;
 use ospf_packet::packet::{self, options::OptionExt, HelloPacket};
 
 use crate::{
+    database::ProtocolDB,
     interface::{AInterface, InterfaceEvent, InterfaceState, NetType},
     must,
     neighbor::{ANeighbor, NeighborEvent, NeighborSubStruct},
@@ -39,7 +40,7 @@ pub async fn handle(iface: AInterface, src: ANeighbor, packet: HelloPacket) {
     src.clone().hello_receive().await;
     // 如果路由器自身出现在列表中，邻居状态机执行事件 2-WayReceived
     // 否则，邻居状态机执行事件 1-WayReceived，并终止包处理过程
-    if packet.neighbors.contains(&iface.read().await.router_id) {
+    if packet.neighbors.contains(&ProtocolDB::get().router_id) {
         src.clone().two_way_received().await;
     } else {
         src.clone().one_way_received().await;

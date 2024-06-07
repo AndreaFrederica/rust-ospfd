@@ -16,4 +16,4 @@ pub const MaxSequenceNumber: i32 = 0x7fffffff;
 pub const AllSPFRouters: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 5);
 pub const AllDRouters: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 6);
 
-pub const BackboneArea: u32 = 0;
+pub const BackboneArea: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);

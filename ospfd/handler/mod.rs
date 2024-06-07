@@ -17,7 +17,7 @@ use crate::interface::{Interface, NetType};
 use crate::log_error;
 use crate::{capture::OspfHandler, util::ip2hex};
 use crate::{
-    constant::{AllDRouters, BackboneArea},
+    constant::AllDRouters,
     interface::AInterface,
     neighbor::{ANeighbor, Neighbor},
     util::hex2ip,
@@ -45,9 +45,9 @@ pub fn ospf_handler_maker(interface: Arc<RwLock<Interface>>) -> OspfHandler {
         let hd = tokio::spawn(async move {
             let iface = interface.read().await;
             match packet.area_id {
-                x if x == ip2hex(iface.area_id) => (),                 // ok
-                BackboneArea if iface.is_dr() || iface.is_bdr() => (), // ok
-                _ => return,                                           // bad area id
+                x if x == ip2hex(iface.area_id) => (),      // ok
+                0 if iface.is_dr() || iface.is_bdr() => (), // ok
+                _ => return,                                // bad area id
             }
             if dest == AllDRouters && iface.is_drother() {
                 return;

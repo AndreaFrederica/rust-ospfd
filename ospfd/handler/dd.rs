@@ -3,12 +3,13 @@ use std::ops::Deref;
 use ospf_packet::packet::DBDescription;
 
 use crate::{
+    database::ProtocolDB,
     interface::AInterface,
     log_error, must,
     neighbor::{ANeighbor, DdPacketCache, NeighborEvent, NeighborState, NeighborSubStruct},
 };
 
-pub async fn handle(iface: AInterface, src: ANeighbor, packet: DBDescription) {
+pub async fn handle(_iface: AInterface, src: ANeighbor, packet: DBDescription) {
     must!(src.read().await.state >= NeighborState::Init);
     if src.read().await.state == NeighborState::Init {
         src.clone().two_way_received().await;
@@ -22,7 +23,7 @@ pub async fn handle(iface: AInterface, src: ANeighbor, packet: DBDescription) {
                 && dd_cache.more
                 && dd_cache.master
                 && packet.lsa_header.is_empty()
-                && prev_state.router_id > iface.read().await.router_id
+                && prev_state.router_id > ProtocolDB::get().router_id
             {
                 // 设定了I,M,MS选项位，包的其他部分为空，且邻居路由器标识比自身路由器标识要大
                 src.clone().negotiation_done().await;
@@ -33,7 +34,7 @@ pub async fn handle(iface: AInterface, src: ANeighbor, packet: DBDescription) {
             } else if !dd_cache.init
                 && !dd_cache.master
                 && dd_cache.sequence_number == prev_state.dd_seq_num
-                && prev_state.router_id < iface.read().await.router_id
+                && prev_state.router_id < ProtocolDB::get().router_id
             {
                 // 清除了I,MS选项位，且包中的 DD 序号等于邻居数据结构中的 DD 序号（标明为确认）
                 // 而且邻居路由器标识比自身路由器标识要小

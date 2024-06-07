@@ -2,10 +2,20 @@ mod listen;
 mod state;
 pub use state::*;
 
-use crate::{constant::BackboneArea, neighbor::ANeighbor, types::*, util::hex2ip};
+use crate::{
+    database::ProtocolDB,
+    neighbor::{ANeighbor, NeighborState},
+    types::*,
+    util::hex2ip,
+};
 
-use std::{collections::HashMap, net::Ipv4Addr, sync::{Arc, Weak}};
+use std::{
+    collections::HashMap,
+    net::Ipv4Addr,
+    sync::{Arc, Weak},
+};
 
+use futures::executor;
 use pnet::{
     datalink::{self, NetworkInterface},
     ipnetwork::IpNetwork,
@@ -17,7 +27,6 @@ use pnet::{
 use tokio::sync::RwLock;
 
 pub struct Interface {
-    pub router_id: Ipv4Addr,
     pub interface_name: String,
     pub sender: TransportSender,
     pub net_type: NetType,
@@ -55,22 +64,21 @@ pub type AInterface = Arc<RwLock<Interface>>;
 pub type WInterface = Weak<RwLock<Interface>>;
 
 impl Interface {
-    pub fn new(
-        router_id: Ipv4Addr,
+    pub async fn new(
+        area_id: Ipv4Addr,
         interface_name: String,
         sender: TransportSender,
         ip_addr: Ipv4Addr,
         ip_mask: Ipv4Addr,
     ) -> AInterface {
         let this = Arc::new(RwLock::new(Self {
-            router_id,
             interface_name,
             sender,
             net_type: NetType::Broadcast,
             state: InterfaceState::Down,
             ip_addr,
             ip_mask,
-            area_id: hex2ip(BackboneArea),
+            area_id,
             hello_interval: 10,
             dead_interval: 40,
             inf_trans_delay: 1,
@@ -86,11 +94,12 @@ impl Interface {
             au_type: 0,
             au_key: 0,
         }));
+        ProtocolDB::get().insert_area(area_id).await;
         listen::listen_interface(Arc::downgrade(&this));
         this
     }
 
-    pub fn from(iface: &NetworkInterface) -> AInterface {
+    pub async fn from(iface: &NetworkInterface, area_id: Ipv4Addr) -> AInterface {
         let ip = iface
             .ips
             .iter()
@@ -109,7 +118,7 @@ impl Interface {
                 e
             ),
         };
-        Self::new(ip.ip(), iface.name.to_string(), tx, ip.ip(), ip.mask())
+        Self::new(area_id, iface.name.to_string(), tx, ip.ip(), ip.mask()).await
     }
 
     pub fn get_network_interface(&self) -> NetworkInterface {
@@ -121,6 +130,11 @@ impl Interface {
                 "There is no interface named {}",
                 self.interface_name
             ))
+    }
+
+    pub async fn shrink_neighbors(&mut self) {
+        self.neighbors
+            .retain(|_, n| executor::block_on(n.read()).state != NeighborState::Down);
     }
 
     pub async fn get_neighbor(&self, ip: Ipv4Addr) -> Option<ANeighbor> {

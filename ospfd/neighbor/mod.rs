@@ -6,7 +6,10 @@ pub use state::*;
 use ospf_packet::{lsa::Lsa, packet::DBDescription};
 use tokio::sync::RwLock;
 
-use crate::{interface::{AInterface, WInterface}, util::hex2ip};
+use crate::{
+    interface::{AInterface, WInterface},
+    util::hex2ip,
+};
 
 use super::types::*;
 
@@ -34,7 +37,7 @@ pub type ANeighbor = Arc<RwLock<Neighbor>>;
 
 impl Neighbor {
     pub fn new(interface: &AInterface, router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> ANeighbor {
-        let this = Arc::new(RwLock::new(Self {
+        Arc::new(RwLock::new(Self {
             interface: Arc::downgrade(&interface),
             state: NeighborState::Down,
             inactive_timer: None,
@@ -50,8 +53,7 @@ impl Neighbor {
             ls_retransmission_list: Vec::new(),
             db_summary_list: Vec::new(),
             ls_request_list: Vec::new(),
-        }));
-        this
+        }))
     }
 
     pub fn reset(&mut self) {

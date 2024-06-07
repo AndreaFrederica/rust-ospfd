@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use ospf_packet::{packet::OspfSubPacket, MutableOspfPacket, Ospf};
 use pnet::packet::Packet as _;
 
-use crate::{interface::AInterface, util::ip2hex};
+use crate::{database::ProtocolDB, interface::AInterface, util::ip2hex};
 
 async fn create_packet(interface: AInterface, packet: &impl OspfSubPacket) -> Ospf {
     let ifr = interface.read().await;
@@ -11,7 +11,7 @@ async fn create_packet(interface: AInterface, packet: &impl OspfSubPacket) -> Os
         version: 2,
         message_type: packet.get_type(),
         length: 0, // assign later
-        router_id: ip2hex(ifr.router_id),
+        router_id: ip2hex(ProtocolDB::get().router_id),
         area_id: ip2hex(ifr.area_id),
         checksum: 0, // assign later
         au_type: ifr.au_type,

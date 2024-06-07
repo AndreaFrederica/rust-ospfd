@@ -11,9 +11,10 @@ pub const fn hex2ip(hex: u32) -> Ipv4Addr {
 
 #[macro_export]
 macro_rules! must {
-    ($x:expr) => {
+    ($x:expr $(;do:$op:expr)? $(;ret:$val:expr)? ) => {
         if !($x) {
-            return;
+            $($op;)?
+            return $($val)?;
         }
     };
     ($x:expr; dbg: $($arg:tt)*) => {
@@ -23,9 +24,15 @@ macro_rules! must {
             return;
         }
     };
-    ($x:expr; $($arg:tt)*) => {
+    ($x:expr; warning: $($arg:tt)*) => {
         if !($x) {
             crate::log_warning!($($arg)*);
+            return;
+        }
+    };
+    ($x:expr; error: $($arg:tt)*) => {
+        if !($x) {
+            crate::log_error!($($arg)*);
             return;
         }
     };

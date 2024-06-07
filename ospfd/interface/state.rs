@@ -11,6 +11,7 @@ use tokio::time::sleep;
 use super::{AInterface, Interface, NetType};
 use crate::{
     constant::AllSPFRouters,
+    database::ProtocolDB,
     log_error, log_success, must,
     neighbor::{Neighbor, NeighborEvent, NeighborState},
     sender::send_packet,
@@ -165,6 +166,7 @@ fn set_hello_timer(ifw: &mut Interface, interface: AInterface) {
 async fn send_hello(interface: AInterface) {
     // first: set timer for next hello packet
     set_hello_timer(interface.write().await.deref_mut(), interface.clone());
+    interface.write().await.shrink_neighbors().await;
     // second: send hello packet
     let ifr = interface.read().await;
     let mut packet = packet::HelloPacket {
@@ -213,7 +215,7 @@ impl From<&Interface> for SelectDr {
     fn from(value: &Interface) -> Self {
         SelectDr {
             priority: value.router_priority,
-            id: value.router_id,
+            id: ProtocolDB::get().router_id,
             ip: value.ip_addr,
             bdr: value.bdr,
             dr: value.dr,
