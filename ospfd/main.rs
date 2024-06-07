@@ -8,7 +8,6 @@ mod interface;
 mod logging;
 mod neighbor;
 mod sender;
-mod types;
 mod util;
 
 use std::net::IpAddr;

@@ -1,10 +1,6 @@
-use std::{
-    net::Ipv4Addr,
-    ops::{Deref, DerefMut},
-    time::Duration,
-};
+use std::{net::Ipv4Addr, ops::Deref, sync::Arc, time::Duration};
 
-use futures::{executor, FutureExt as _};
+use futures::executor;
 use ospf_packet::packet::{self, options::OptionExt};
 use tokio::time::sleep;
 
@@ -91,8 +87,9 @@ impl InterfaceEvent for AInterface {
         } else {
             InterfaceState::Waiting
         };
-        tokio::spawn(send_hello(self.clone()));
-        log_state(InterfaceState::Down, interface.deref());
+        drop(interface);
+        set_hello_timer(&self).await;
+        log_state(InterfaceState::Down, self.read().await.deref());
     }
 
     async fn wait_timer(self) {
@@ -153,19 +150,22 @@ impl InterfaceEvent for AInterface {
     }
 }
 
-fn set_hello_timer(ifw: &mut Interface, interface: AInterface) {
-    let interval = ifw.hello_interval as u64;
-    ifw.hello_timer.take().map(|f| f.abort());
-    ifw.hello_timer = Some(tokio::spawn(sleep(Duration::from_secs(interval)).then(
-        |_| async {
+async fn set_hello_timer(interface: &AInterface) {
+    let weak = Arc::downgrade(interface);
+    let mut interface = interface.write().await;
+    interface.hello_timer.abort();
+    interface.hello_timer = tokio::spawn(async move {
+        while let Some(interface) = weak.upgrade() {
+            let hello_interval = interface.read().await.hello_interval as u64;
             send_hello(interface).await;
-        },
-    )));
+            sleep(Duration::from_secs(hello_interval)).await;
+        }
+        crate::log_warning!("interface is dropped, hello timer stopped");
+    });
 }
 
 async fn send_hello(interface: AInterface) {
-    // first: set timer for next hello packet
-    set_hello_timer(interface.write().await.deref_mut(), interface.clone());
+    // first: shrink neighbors
     interface.write().await.shrink_neighbors().await;
     // second: send hello packet
     let ifr = interface.read().await;

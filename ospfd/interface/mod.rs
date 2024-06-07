@@ -5,7 +5,6 @@ pub use state::*;
 use crate::{
     database::ProtocolDB,
     neighbor::{ANeighbor, NeighborState},
-    types::*,
     util::hex2ip,
 };
 
@@ -39,8 +38,8 @@ pub struct Interface {
     pub inf_trans_delay: u16,
     pub router_priority: u8,
     pub external_routing: bool,
-    pub hello_timer: TimerHandle,
-    pub wait_timer: TimerHandle,
+    pub hello_timer: tokio::task::JoinHandle<()>,
+    pub wait_timer: tokio::task::JoinHandle<()>,
     #[doc = "ip -> neighbor (p2p|virtual => ip := router_id)"]
     pub neighbors: HashMap<Ipv4Addr, ANeighbor>,
     pub dr: Ipv4Addr,
@@ -84,8 +83,8 @@ impl Interface {
             inf_trans_delay: 1,
             router_priority: 1,
             external_routing: true,
-            hello_timer: None,
-            wait_timer: None,
+            hello_timer: tokio::spawn(async {}),
+            wait_timer: tokio::spawn(async {}),
             neighbors: HashMap::new(),
             dr: hex2ip(0),
             bdr: hex2ip(0),
@@ -142,8 +141,8 @@ impl Interface {
     }
 
     pub fn reset(&mut self) {
-        self.hello_timer.take().map(|f| f.abort());
-        self.wait_timer.take().map(|f| f.abort());
+        self.hello_timer.abort();
+        self.wait_timer.abort();
         self.dr = hex2ip(0);
         self.bdr = hex2ip(0);
         self.cost = 0;

@@ -11,13 +11,11 @@ use crate::{
     util::hex2ip,
 };
 
-use super::types::*;
-
 #[derive(Debug)]
 pub struct Neighbor {
     pub interface: WInterface,
     pub state: NeighborState,
-    pub inactive_timer: TimerHandle,
+    pub inactive_timer: tokio::task::JoinHandle<()>,
     #[doc = "if the neighbor is master"]
     pub master: bool,
     pub dd_seq_num: u32,
@@ -40,7 +38,7 @@ impl Neighbor {
         Arc::new(RwLock::new(Self {
             interface: Arc::downgrade(&interface),
             state: NeighborState::Down,
-            inactive_timer: None,
+            inactive_timer: tokio::spawn(async {}),
             master: false,
             dd_seq_num: 0,
             dd_last_packet: DdPacketCache::default(),

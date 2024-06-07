@@ -188,7 +188,7 @@ impl NeighborEvent for ANeighbor {
         log_event("kill_nbr", self.read().await.deref());
         let old = self.read().await.state;
         self.write().await.reset();
-        self.write().await.inactive_timer.take().map(|f| f.abort());
+        self.write().await.inactive_timer.abort();
         self.write().await.state = NeighborState::Down;
         log_state(old, self.read().await.deref());
     }
@@ -207,7 +207,7 @@ impl NeighborEvent for ANeighbor {
         log_event("ll_down", self.read().await.deref());
         let old = self.read().await.state;
         self.write().await.reset();
-        self.write().await.inactive_timer.take().map(|f| f.abort());
+        self.write().await.inactive_timer.abort();
         self.write().await.state = NeighborState::Down;
         log_state(old, self.read().await.deref());
     }
@@ -223,11 +223,11 @@ async fn reset_timer(this: ANeighbor) {
         .unwrap_or(1) as u64;
     let cloned = this.clone();
     let mut this = this.write().await;
-    this.inactive_timer.take().map(|f| f.abort());
-    this.inactive_timer = Some(tokio::spawn(async move {
+    this.inactive_timer.abort();
+    this.inactive_timer = tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(dead_interval)).await;
         cloned.inactivity_timer().await;
-    }));
+    });
 }
 
 async fn judge_connect(this: &Neighbor) -> bool {
