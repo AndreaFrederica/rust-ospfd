@@ -3,7 +3,12 @@ use std::{marker::PhantomData, ops::DerefMut};
 use ospf_packet::packet::DBDescription;
 
 use super::{Neighbor, RefNeighbor};
-use crate::{database::ProtocolDB, guard, interface::NetType, log_success, must};
+use crate::{
+    database::ProtocolDB,
+    guard,
+    interface::{InterfaceEvent, NetType},
+    log_success, must,
+};
 
 #[cfg(debug_assertions)]
 use crate::log;
@@ -180,7 +185,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         must!(old >= NeighborState::TwoWay);
         this.reset();
         this.state = NeighborState::Init;
-        log_state(old, this);
+        self.get_interface().neighbor_change().await;
+        log_state(old, self.get_neighbor());
     }
 
     async fn kill_nbr(&mut self) {
@@ -191,7 +197,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         this.reset();
         this.inactive_timer.abort();
         this.state = NeighborState::Down;
-        log_state(old, this);
+        self.get_interface().neighbor_change().await;
+        log_state(old, self.get_neighbor());
     }
 
     async fn inactivity_timer(&mut self) {
@@ -201,7 +208,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         let old = this.state;
         this.reset();
         this.state = NeighborState::Down;
-        log_state(old, this);
+        self.get_interface().neighbor_change().await;
+        log_state(old, self.get_neighbor());
     }
 
     async fn ll_down(&mut self) {
@@ -212,7 +220,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         this.reset();
         this.inactive_timer.abort();
         this.state = NeighborState::Down;
-        log_state(old, this);
+        self.get_interface().neighbor_change().await;
+        log_state(old, self.get_neighbor());
     }
 }
 
@@ -230,7 +239,8 @@ async fn reset_timer(this: &mut RefNeighbor<'_>) {
             .unwrap()
             .inactivity_timer()
             .await;
-    });
+    })
+    .abort_handle();
 }
 
 async fn judge_connect(this: &mut RefNeighbor<'_>) -> bool {

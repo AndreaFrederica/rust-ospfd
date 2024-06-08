@@ -11,7 +11,7 @@ use super::{Interface, NetType};
 use crate::{
     constant::AllSPFRouters,
     database::ProtocolDB,
-    log_error, log_success, must,
+    guard, log_error, log_success, must,
     neighbor::{Neighbor, NeighborEvent, NeighborState, RefNeighbor},
     sender::send_packet,
     util::hex2ip,
@@ -32,7 +32,6 @@ pub enum InterfaceState {
 }
 
 // helper trait for event handling
-#[allow(unused)]
 pub trait InterfaceEvent: Send {
     async fn interface_up(&mut self);
     async fn wait_timer(&mut self);
@@ -87,6 +86,13 @@ impl InterfaceEvent for Interface {
         } else if self.router_priority == 0 {
             InterfaceState::DROther
         } else {
+            let weak = self.me.clone();
+            self.wait_timer = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(20)).await;
+                guard!(Some(iface) = weak.upgrade());
+                iface.lock().await.wait_timer().await;
+            })
+            .abort_handle();
             InterfaceState::Waiting
         };
         set_hello_timer(self);
@@ -159,7 +165,8 @@ fn set_hello_timer(interface: &mut Interface) {
             sleep(Duration::from_secs(hello_interval)).await;
         }
         crate::log_warning!("interface is dropped, hello timer stopped");
-    });
+    })
+    .abort_handle();
 }
 
 async fn send_hello(interface: &mut Interface) {

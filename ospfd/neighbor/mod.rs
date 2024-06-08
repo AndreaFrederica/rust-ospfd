@@ -11,12 +11,15 @@ use std::{
 
 use ospf_packet::{lsa::LsaHeader, packet::DBDescription};
 
-use crate::{database::LsaIndex, util::hex2ip};
+use crate::{
+    database::LsaIndex,
+    util::{do_nothing_handle, hex2ip},
+};
 
 #[derive(Debug)]
 pub struct Neighbor {
     pub state: NeighborState,
-    pub inactive_timer: tokio::task::JoinHandle<()>,
+    pub inactive_timer: tokio::task::AbortHandle,
     /// true 表示邻居是 master
     pub master: bool,
     pub dd_seq_num: u32,
@@ -44,7 +47,7 @@ impl Neighbor {
     pub fn new(router_id: Ipv4Addr, ip_addr: Ipv4Addr) -> Neighbor {
         Self {
             state: NeighborState::Down,
-            inactive_timer: tokio::spawn(async {}),
+            inactive_timer: do_nothing_handle(),
             master: false,
             dd_seq_num: 0,
             dd_last_packet: DdPacketCache::default(),
