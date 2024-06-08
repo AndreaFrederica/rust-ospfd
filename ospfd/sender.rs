@@ -19,7 +19,11 @@ async fn create_packet(interface: &Interface, packet: &impl OspfSubPacket) -> Os
     }
 }
 
-pub async fn send_packet(iface: &mut Interface, packet: &impl OspfSubPacket, destination: Ipv4Addr) {
+pub async fn send_packet(
+    iface: &mut Interface,
+    packet: &impl OspfSubPacket,
+    destination: Ipv4Addr,
+) {
     let raw = create_packet(iface, packet).await;
     let mut buffer = vec![0; raw.len()];
     let mut m_packet = MutableOspfPacket::new(&mut buffer).unwrap();
@@ -32,5 +36,10 @@ pub async fn send_packet(iface: &mut Interface, packet: &impl OspfSubPacket, des
         Err(e) => panic!("failed to send packet: {}", e),
     }
     #[cfg(debug_assertions)]
-    crate::log!("sent packet: {}({} bytes)", std::any::type_name_of_val(packet), m_packet.packet().len());
+    crate::log!(
+        "sent packet to {}: {}({} bytes)",
+        destination,
+        std::any::type_name_of_val(packet),
+        m_packet.packet().len()
+    );
 }

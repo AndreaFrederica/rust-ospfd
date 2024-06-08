@@ -41,8 +41,8 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
             {
                 // 清除了I,MS选项位，且包中的 DD 序号等于邻居数据结构中的 DD 序号（标明为确认）
                 // 而且邻居路由器标识比自身路由器标识要小
-                src.negotiation_done().await;
                 neighbor.master = false;
+                src.negotiation_done().await;
             }
         }
         NeighborState::Exchange | NeighborState::Loading | NeighborState::Full

@@ -3,7 +3,7 @@ use std::{marker::PhantomData, ops::DerefMut};
 use ospf_packet::packet::DBDescription;
 
 use super::{Neighbor, RefNeighbor};
-use crate::{database::ProtocolDB, guard, interface::NetType, log_error, log_success, must};
+use crate::{database::ProtocolDB, guard, interface::NetType, log_success, must};
 
 #[cfg(debug_assertions)]
 use crate::log;
@@ -114,11 +114,9 @@ impl NeighborEvent for RefNeighbor<'_> {
             this.state = NeighborState::Full;
         } else {
             this.state = NeighborState::Loading;
-            //todo send ls request
-            //todo after receive ls update, call loading_done
-            log_error!("todo! send ls request");
+            self.spawn_lsr_sender();
         }
-        log_state(NeighborState::Exchange, this);
+        log_state(NeighborState::Exchange, self.get_neighbor());
     }
 
     async fn bad_ls_req(&mut self) {

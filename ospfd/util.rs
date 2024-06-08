@@ -9,6 +9,10 @@ pub const fn hex2ip(hex: u32) -> Ipv4Addr {
     Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])
 }
 
+pub fn do_nothing_handle() -> tokio::task::AbortHandle {
+    tokio::spawn(async {}).abort_handle()
+}
+
 #[macro_export]
 macro_rules! must {
     ($x:expr $(;else:$op:expr)? $(;ret:$val:expr)? $(;)?) => {

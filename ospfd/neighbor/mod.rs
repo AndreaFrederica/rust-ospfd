@@ -1,5 +1,6 @@
 mod pair;
 mod state;
+use pair::LsrHandle;
 pub use pair::RefNeighbor;
 pub use state::*;
 
@@ -30,7 +31,7 @@ pub struct Neighbor {
     /// DD 包重传 （仅主机才能重传）
     pub dd_rxmt: DdRxmt,
     /// lsr sender
-    pub lsr_handle: tokio::task::JoinHandle<()>,
+    pub lsr_handle: LsrHandle,
     /// 已经被洪泛，但还没有从邻接得到确认的 LSA 列表 (等待 LS ACK)
     pub ls_retransmission_list: HashSet<LsaIndex>,
     /// 区域连接状态数据库中 LSA 的完整列表 (发送 DD 时需要附带的)
@@ -54,7 +55,7 @@ impl Neighbor {
             dr: hex2ip(0),
             bdr: hex2ip(0),
             dd_rxmt: DdRxmt::None,
-            lsr_handle: tokio::spawn(async {}),
+            lsr_handle: LsrHandle::default(),
             ls_retransmission_list: HashSet::new(),
             db_summary_list: VecDeque::new(),
             ls_request_list: VecDeque::new(),

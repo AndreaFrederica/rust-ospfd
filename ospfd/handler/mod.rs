@@ -28,7 +28,8 @@ pub fn ospf_handler_maker(interface: AInterface) -> OspfHandler {
         // debug
         #[cfg(debug_assertions)]
         crate::log!(
-            "packet received: {} ({} bytes)",
+            "packet received from {}: {} ({} bytes)",
+            src,
             message_type_string(packet.get_message_type()),
             packet.get_length()
         );

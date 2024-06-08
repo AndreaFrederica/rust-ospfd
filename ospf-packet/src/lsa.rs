@@ -1,4 +1,4 @@
-use crate::bits::*;
+use crate::{bits::*, constant};
 
 use std::{marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
 
@@ -56,6 +56,8 @@ impl FromBuf for Lsa {
 }
 
 #[raw_packet]
+#[derive(Eq)]
+#[doc = "The LsaHeader impl Ord, the greater the newer"]
 pub struct LsaHeader {
     pub ls_age: u16,
     pub options: u8,
@@ -65,6 +67,46 @@ pub struct LsaHeader {
     pub ls_sequence_number: u32,
     pub ls_checksum: u16,
     pub length: u16,
+}
+
+impl Ord for LsaHeader {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // 较大 LS 序号的 LSA 较新
+        if self.ls_sequence_number != other.ls_sequence_number {
+            return self.ls_sequence_number.cmp(&other.ls_sequence_number);
+        }
+        // 具有较大校验和（按 16 位无符号整数）的实例较新
+        if self.ls_checksum != other.ls_checksum {
+            return self.ls_checksum.cmp(&other.ls_checksum);
+        }
+        // 如果其中一个实例的 LS 时限为 MaxAge，则这个实例为较新
+        if self.ls_age == other.ls_age {
+            return std::cmp::Ordering::Equal;
+        }
+        if self.ls_age == constant::LsaMaxAge {
+            return std::cmp::Ordering::Greater;
+        }
+        if other.ls_age == constant::LsaMaxAge {
+            return std::cmp::Ordering::Greater;
+        }
+        // 如果两个实例 LS 时限的差异大于 MaxAgeDiff，较小时限（较近生成）的实例为较新
+        if self.ls_age.abs_diff(other.ls_age) >= constant::MaxAgeDiff {
+            return other.ls_age.cmp(&self.ls_age);
+        }
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl PartialOrd for LsaHeader {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for LsaHeader {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
 }
 
 #[derive(Clone, Debug)]

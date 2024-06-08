@@ -8,7 +8,7 @@ use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock};
 use ospf_packet::lsa::{self, AsExternalLSA, Lsa, LsaData, LsaHeader};
 use tokio::sync::Mutex;
 
-use crate::{area::{Area, BackboneDB}, constant::{LsaMaxAge, MaxAgeDiff}, guard};
+use crate::{area::{Area, BackboneDB}, guard};
 
 type LsaAsExternal = (LsaHeader, AsExternalLSA);
 
@@ -74,23 +74,7 @@ impl ProtocolDB {
 
     pub async fn need_update(&self, area_id: Ipv4Addr, lsa: &LsaHeader) -> bool {
         guard!(Some(me) = self.get_lsa(area_id, lsa.into()).await; ret: true);
-        let header = me.header;
-        if lsa.ls_sequence_number != header.ls_sequence_number {
-            return lsa.ls_sequence_number > header.ls_sequence_number;
-        }
-        if lsa.ls_checksum != header.ls_checksum {
-            return lsa.ls_checksum > header.ls_checksum;
-        }
-        if lsa.ls_age == LsaMaxAge {
-            return true;
-        }
-        if header.ls_age == LsaMaxAge {
-            return false;
-        }
-        if lsa.ls_age.abs_diff(header.ls_age) >= MaxAgeDiff {
-            return lsa.ls_age < header.ls_age;
-        }
-        false
+        lsa > &me.header
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod bits;
+mod constant;
 pub mod lsa;
 pub mod packet;
 
