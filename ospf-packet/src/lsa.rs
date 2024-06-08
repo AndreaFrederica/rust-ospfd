@@ -1,6 +1,6 @@
 use crate::bits::*;
 
-use std::{marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
+use std::{iter::Sum, marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
 
 use bytes::{Buf, BytesMut};
 use ospf_macros::raw_packet;
@@ -18,6 +18,15 @@ pub mod types {
 pub struct Lsa {
     pub header: LsaHeader,
     pub data: LsaData,
+}
+
+impl<T: Into<LsaData>> From<(LsaHeader, T)> for Lsa {
+    fn from(value: (LsaHeader, T)) -> Self {
+        Lsa {
+            header: value.0,
+            data: value.1.into(),
+        }
+    }
 }
 
 impl ToBytesMut for Lsa {
@@ -65,6 +74,24 @@ pub enum LsaData {
     SummaryIP(SummaryLSA),
     SummaryASBR(SummaryLSA),
     ASExternal(AsExternalLSA),
+}
+
+impl From<RouterLSA> for LsaData {
+    fn from(value: RouterLSA) -> Self {
+        LsaData::Router(value)
+    }
+}
+
+impl From<NetworkLSA> for LsaData {
+    fn from(value: NetworkLSA) -> Self {
+        LsaData::Network(value)
+    }
+}
+
+impl From<AsExternalLSA> for LsaData {
+    fn from(value: AsExternalLSA) -> Self {
+        LsaData::ASExternal(value)
+    }
 }
 
 impl ToBytesMut for LsaData {

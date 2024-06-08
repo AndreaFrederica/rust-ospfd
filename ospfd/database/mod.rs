@@ -5,10 +5,12 @@ pub use vlink::VirtualLink;
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock};
 
-use ospf_packet::lsa::{AsExternalLSA, LsaHeader};
+use ospf_packet::lsa::{self, AsExternalLSA, Lsa, LsaData, LsaHeader};
 use tokio::sync::Mutex;
 
 use crate::area::{Area, BackboneDB};
+
+type LsaAsExternal = (LsaHeader, AsExternalLSA);
 
 #[derive(Debug)]
 pub struct ProtocolDB {
@@ -17,7 +19,7 @@ pub struct ProtocolDB {
     pub backbone: BackboneDB,
     pub virtual_links: Mutex<Vec<VirtualLink>>,
     pub external_routes: Mutex<Vec<Ipv4Addr>>,
-    pub as_external_lsa: Mutex<Vec<(LsaHeader, AsExternalLSA)>>,
+    pub as_external_lsa: Mutex<HashMap<LsaMapIndex, LsaAsExternal>>,
     pub routing_table: RoutingTable,
 }
 
@@ -31,7 +33,7 @@ impl ProtocolDB {
             backbone: BackboneDB::new(),
             virtual_links: Mutex::new(Vec::new()),
             external_routes: Mutex::new(Vec::new()),
-            as_external_lsa: Mutex::new(Vec::new()),
+            as_external_lsa: Mutex::new(HashMap::new()),
             routing_table: RoutingTable::new(),
         });
     }
@@ -44,6 +46,61 @@ impl ProtocolDB {
         let mut lock = self.areas.lock().await;
         if !lock.contains_key(&area_id) {
             lock.insert(area_id, Area::new(area_id));
+        }
+    }
+
+    pub async fn get_lsa(&self, area_id: Ipv4Addr, index: LsaIndex) -> Option<Lsa> {
+        let lock = self.areas.lock().await;
+        let area = lock.get(&area_id)?;
+        let as_external = self.as_external_lsa.lock().await;
+        match index.ls_type {
+            lsa::types::ROUTER_LSA => area.router_lsa.get(&index.into()).map(|v| v.clone().into()),
+            lsa::types::NETWORK_LSA => area
+                .network_lsa
+                .get(&index.into())
+                .map(|v| v.clone().into()),
+            lsa::types::SUMMARY_IP_LSA => area
+                .ip_summary_lsa
+                .get(&index.into())
+                .map(|(h, d)| (h.clone(), LsaData::SummaryIP(d.clone())).into()),
+            lsa::types::SUMMARY_ASBR_LSA => area
+                .asbr_summary_lsa
+                .get(&index.into())
+                .map(|(h, d)| (h.clone(), LsaData::SummaryASBR(d.clone())).into()),
+            lsa::types::AS_EXTERNAL_LSA => as_external.get(&index.into()).map(|v| v.clone().into()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LsaIndex {
+    pub ls_type: u8,
+    pub ls_id: u32,
+    pub ad_router: Ipv4Addr,
+}
+
+impl LsaIndex {
+    pub fn new(ls_type: u8, ls_id: u32, ad_router: Ipv4Addr) -> Self {
+        Self {
+            ls_type,
+            ls_id,
+            ad_router,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LsaMapIndex {
+    pub ls_id: u32,
+    pub ad_router: Ipv4Addr,
+}
+
+impl From<LsaIndex> for LsaMapIndex {
+    fn from(value: LsaIndex) -> Self {
+        Self {
+            ls_id: value.ls_id,
+            ad_router: value.ad_router,
         }
     }
 }
