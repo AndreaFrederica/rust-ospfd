@@ -17,20 +17,20 @@ macro_rules! must {
             return $($val)?;
         }
     };
-    ($x:expr; dbg: $($arg:tt)* $(;)?) => {
+    ($x:expr; dbg: $($arg:tt)*) => {
         if !($x) {
             #[cfg(debug_assertions)]
             crate::log_warning!($($arg)*);
             return;
         }
     };
-    ($x:expr; warning: $($arg:tt)* $(;)?) => {
+    ($x:expr; warning: $($arg:tt)*) => {
         if !($x) {
             crate::log_warning!($($arg)*);
             return;
         }
     };
-    ($x:expr; error: $($arg:tt)* $(;)?) => {
+    ($x:expr; error: $($arg:tt)*) => {
         if !($x) {
             crate::log_error!($($arg)*);
             return;
@@ -46,20 +46,20 @@ macro_rules! guard {
             return $($val)?;
         };
     };
-    ($x:pat = $y:expr; dbg: $($arg:tt)* $(;)?) => {
+    ($x:pat = $y:expr; dbg: $($arg:tt)*) => {
         let $x = $y else {
             #[cfg(debug_assertions)]
             crate::log_warning!($($arg)*);
             return;
         };
     };
-    ($x:pat = $y:expr; warning: $($arg:tt)* $(;)?) => {
+    ($x:pat = $y:expr; warning: $($arg:tt)*) => {
         let $x = $y else {
             crate::log_warning!($($arg)*);
             return;
         };
     };
-    ($x:pat = $y:expr; error: $($arg:tt)* $(;)?) => {
+    ($x:pat = $y:expr; error: $($arg:tt)*) => {
         let $x = $y else {
             crate::log_error!($($arg)*);
             return;

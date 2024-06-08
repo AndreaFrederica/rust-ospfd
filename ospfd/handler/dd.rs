@@ -1,12 +1,15 @@
-use std::ops::Deref;
+use std::{marker::PhantomData, ops::Deref};
 
 use ospf_macros::define;
-use ospf_packet::packet::DBDescription;
+use ospf_packet::{lsa, packet::DBDescription};
 
 use crate::{
     database::ProtocolDB,
-    log_error, must,
-    neighbor::{RefNeighbor, DdPacketCache, NeighborEvent, NeighborState, NeighborSubStruct},
+    guard, must,
+    neighbor::{
+        DdPacketCache, DdRxmt, NeighborEvent, NeighborState, NeighborSubStruct, RefNeighbor,
+    },
+    sender::send_packet,
 };
 
 #[define(iface => src.get_interface(); neighbor => src.get_neighbor())]
@@ -27,10 +30,10 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
                 && prev_state.router_id > ProtocolDB::get().router_id
             {
                 // 设定了I,M,MS选项位，包的其他部分为空，且邻居路由器标识比自身路由器标识要大
-                src.negotiation_done().await;
                 neighbor.option = packet.options;
                 neighbor.master = true;
                 neighbor.dd_seq_num = dd_cache.sequence_number;
+                src.negotiation_done().await;
             } else if !dd_cache.init
                 && !dd_cache.master
                 && dd_cache.sequence_number == prev_state.dd_seq_num
@@ -48,11 +51,15 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
             // 重复 DD 包
             if prev_state.master {
                 // i am slave
-                log_error!("todo: should resend last packet to master");
-            } else {
-                // i am master
-                return;
+                guard! {
+                    DdRxmt::Packet(ref p) = neighbor.dd_rxmt;
+                    error: "There are no dd packet to resend to the master({})!", neighbor.router_id
+                };
+                let packet = p.clone();
+                let ip = neighbor.ip_addr;
+                send_packet(iface, &packet, ip).await;
             }
+            return;
         }
         NeighborState::Exchange => {
             // 主从（MS）位的状态与当前的主从关系不匹配
@@ -76,18 +83,53 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
         }
         _ => return,
     }
-    log_error!("todo! update lsa database");
-    if prev_state.master {
+    // update database
+    for ref lsa in packet.lsa_header {
+        must!((1..=5).contains(&lsa.ls_type); else: src.seq_number_mismatch().await);
+        must!(lsa.ls_type != lsa::types::AS_EXTERNAL_LSA || iface.external_routing; else: src.seq_number_mismatch().await);
+        if ProtocolDB::get().need_update(iface.area_id, lsa).await {
+            neighbor.ls_request_list.push_back(lsa.clone());
+        }
+    }
+    src.spawn_lsr_sender();
+    // send dd
+    if neighbor.master {
+        // send dd to master
         neighbor.dd_seq_num = dd_cache.sequence_number;
-        log_error!("todo! send dd packet to the master");
-        if !dd_cache.more {
-            src.exchange_done().await;
+        let ip = neighbor.ip_addr;
+        let more = dd_cache.more as u8;
+        let mut len = neighbor.db_summary_list.len();
+        if dd_cache.more {
+            len = len.min(8);
         }
+        let packet = DBDescription {
+            interface_mtu: 0,
+            options: neighbor.option,
+            _zeros: PhantomData,
+            init: 0,
+            more,
+            master: 0,
+            db_sequence_number: neighbor.dd_seq_num,
+            lsa_header: neighbor.db_summary_list.drain(0..len).collect(),
+        };
+        send_packet(iface, &packet, ip).await;
+        neighbor.dd_rxmt.set(DdRxmt::Packet(packet));
+        must!(dd_cache.more; else: src.exchange_done().await);
     } else {
+        // send dd to slave
         neighbor.dd_seq_num = prev_state.dd_seq_num + 1;
-        log_error!("todo! send dd packet to the slave");
-        if !dd_cache.more {
-            src.exchange_done().await;
-        }
+        must!(dd_cache.more; else: src.exchange_done().await);
+        let len = neighbor.db_summary_list.len().min(12);
+        let packet = DBDescription {
+            interface_mtu: 0,
+            options: neighbor.option,
+            _zeros: PhantomData,
+            init: 0,
+            more: (len < neighbor.db_summary_list.len()) as u8,
+            master: 1,
+            db_sequence_number: neighbor.dd_seq_num,
+            lsa_header: neighbor.db_summary_list.drain(0..len).collect(),
+        };
+        src.spawn_master_send_dd(packet);
     }
 }

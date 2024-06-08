@@ -3,19 +3,23 @@ mod state;
 pub use pair::RefNeighbor;
 pub use state::*;
 
-use std::net::Ipv4Addr;
+use std::{
+    collections::{HashSet, VecDeque},
+    net::Ipv4Addr,
+};
 
-use ospf_packet::{lsa::Lsa, packet::DBDescription};
+use ospf_packet::{lsa::LsaHeader, packet::DBDescription};
 
-use crate::util::hex2ip;
+use crate::{database::LsaIndex, util::hex2ip};
 
 #[derive(Debug)]
 pub struct Neighbor {
     pub state: NeighborState,
     pub inactive_timer: tokio::task::JoinHandle<()>,
-    #[doc = "if the neighbor is master"]
+    /// true 表示邻居是 master
     pub master: bool,
     pub dd_seq_num: u32,
+    /// 邻居发给自己的上一个 DD 包
     pub dd_last_packet: DdPacketCache,
     pub router_id: Ipv4Addr,
     pub priority: u8,
@@ -23,9 +27,16 @@ pub struct Neighbor {
     pub option: u8,
     pub dr: Ipv4Addr,
     pub bdr: Ipv4Addr,
-    pub ls_retransmission_list: Vec<Lsa>,
-    pub db_summary_list: Vec<Lsa>,
-    pub ls_request_list: Vec<Lsa>,
+    /// DD 包重传 （仅主机才能重传）
+    pub dd_rxmt: DdRxmt,
+    /// lsr sender
+    pub lsr_handle: tokio::task::JoinHandle<()>,
+    /// 已经被洪泛，但还没有从邻接得到确认的 LSA 列表 (等待 LS ACK)
+    pub ls_retransmission_list: HashSet<LsaIndex>,
+    /// 区域连接状态数据库中 LSA 的完整列表 (发送 DD 时需要附带的)
+    pub db_summary_list: VecDeque<LsaHeader>,
+    /// 需要从邻居接收，以同步两者之间连接状态数据库的 LSA 列表 （需要发送 LSR）
+    pub ls_request_list: VecDeque<LsaHeader>,
 }
 
 impl Neighbor {
@@ -42,13 +53,17 @@ impl Neighbor {
             option: 0,
             dr: hex2ip(0),
             bdr: hex2ip(0),
-            ls_retransmission_list: Vec::new(),
-            db_summary_list: Vec::new(),
-            ls_request_list: Vec::new(),
+            dd_rxmt: DdRxmt::None,
+            lsr_handle: tokio::spawn(async {}),
+            ls_retransmission_list: HashSet::new(),
+            db_summary_list: VecDeque::new(),
+            ls_request_list: VecDeque::new(),
         }
     }
 
     pub fn reset(&mut self) {
+        self.dd_rxmt.reset();
+        self.lsr_handle.abort();
         self.ls_retransmission_list.clear();
         self.db_summary_list.clear();
         self.ls_request_list.clear();
@@ -60,6 +75,28 @@ impl Neighbor {
 
     pub fn is_bdr(&self) -> bool {
         self.ip_addr == self.bdr
+    }
+}
+
+#[derive(Debug)]
+pub enum DdRxmt {
+    Handle(tokio::task::JoinHandle<()>),
+    Packet(DBDescription),
+    None,
+}
+
+impl DdRxmt {
+    pub fn reset(&mut self) {
+        match self {
+            DdRxmt::Handle(h) => h.abort(),
+            _ => (),
+        }
+        *self = DdRxmt::None;
+    }
+
+    pub fn set(&mut self, other: DdRxmt) {
+        self.reset();
+        *self = other;
     }
 }
 

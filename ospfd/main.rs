@@ -32,7 +32,7 @@ async fn main() {
         .unwrap()
         .ip()
     else {
-        unreachable!();
+        panic!("The interface do NOT have an ipv4 address");
     };
     ProtocolDB::init(ip);
     let interface = interface::Interface::from(&iface, BackboneArea).await;

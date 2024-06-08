@@ -1,6 +1,6 @@
 use crate::bits::*;
 
-use std::{iter::Sum, marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
+use std::{marker::PhantomData, mem::size_of_val, net::Ipv4Addr};
 
 use bytes::{Buf, BytesMut};
 use ospf_macros::raw_packet;

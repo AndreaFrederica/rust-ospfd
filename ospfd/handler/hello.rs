@@ -23,6 +23,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: HelloPacket) {
     must!(iface.external_routing == packet.is_set(packet::options::E));
     // neighbor structure
     let prev_state = NeighborSubStruct::from(neighbor.deref());
+    neighbor.option = packet.options;
     neighbor.dr = packet.designated_router;
     neighbor.bdr = packet.backup_designated_router;
     neighbor.priority = packet.router_priority;

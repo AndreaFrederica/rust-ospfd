@@ -1,7 +1,9 @@
-use std::ops::DerefMut;
+use std::{marker::PhantomData, ops::DerefMut};
+
+use ospf_packet::packet::DBDescription;
 
 use super::{Neighbor, RefNeighbor};
-use crate::{guard, interface::NetType, log_error, log_success, must};
+use crate::{database::ProtocolDB, guard, interface::NetType, log_error, log_success, must};
 
 #[cfg(debug_assertions)]
 use crate::log;
@@ -51,8 +53,9 @@ fn log_state(old: NeighborState, neighbor: &Neighbor) {
         return;
     }
     log_success!(
-        "neighbor {}'s state changed: {:?} -> {:?}",
+        "neighbor {}({})'s state changed: {:?} -> {:?}",
         neighbor.router_id,
+        if neighbor.master { "master" } else { "slave" },
         old,
         neighbor.state
     );
@@ -87,7 +90,7 @@ impl NeighborEvent for RefNeighbor<'_> {
         } else {
             NeighborState::TwoWay
         };
-        ex_start(self.get_neighbor()).await;
+        ex_start(self);
         log_state(old, self.get_neighbor());
     }
 
@@ -96,10 +99,9 @@ impl NeighborEvent for RefNeighbor<'_> {
         #[cfg(debug_assertions)]
         log_event("negotiation_done", this);
         must!(this.state == NeighborState::ExStart);
-        //todo summary lsa
-        log_error!("todo! negotiation_done");
-        this.state = NeighborState::Exchange;
-        log_state(NeighborState::ExStart, this);
+        summary_lsa(self).await;
+        self.get_neighbor().state = NeighborState::Exchange;
+        log_state(NeighborState::ExStart, self.get_neighbor());
     }
 
     async fn exchange_done(&mut self) {
@@ -107,6 +109,7 @@ impl NeighborEvent for RefNeighbor<'_> {
         #[cfg(debug_assertions)]
         log_event("exchange_done", this);
         must!(this.state == NeighborState::Exchange);
+        this.dd_rxmt.reset();
         if this.ls_request_list.is_empty() {
             this.state = NeighborState::Full;
         } else {
@@ -126,8 +129,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         must!(old >= NeighborState::Exchange);
         this.reset();
         this.state = NeighborState::ExStart;
-        ex_start(this).await;
-        log_state(old, this);
+        ex_start(self);
+        log_state(old, self.get_neighbor());
     }
 
     async fn loading_done(&mut self) {
@@ -149,7 +152,7 @@ impl NeighborEvent for RefNeighbor<'_> {
             } else {
                 NeighborState::TwoWay
             };
-            ex_start(self.get_neighbor()).await;
+            ex_start(self);
         } else if old >= NeighborState::ExStart {
             if !judge_connect(self).await {
                 self.get_neighbor().state = NeighborState::TwoWay;
@@ -167,8 +170,8 @@ impl NeighborEvent for RefNeighbor<'_> {
         must!(old >= NeighborState::Exchange);
         this.reset();
         this.state = NeighborState::ExStart;
-        ex_start(this).await;
-        log_state(old, this);
+        ex_start(self);
+        log_state(old, self.get_neighbor());
     }
 
     async fn one_way_received(&mut self) {
@@ -242,14 +245,54 @@ async fn judge_connect(this: &mut RefNeighbor<'_>) -> bool {
         || this.get_neighbor().is_dr()
 }
 
-async fn ex_start(this: &mut Neighbor) {
-    must!(this.state == NeighborState::ExStart && this.dd_seq_num == 0);
+fn ex_start(this: &mut RefNeighbor<'_>) {
+    let neighbor = this.get_neighbor();
+    must!(neighbor.state == NeighborState::ExStart && neighbor.dd_seq_num == 0);
     // first time
-    this.dd_seq_num = std::time::SystemTime::now()
+    neighbor.dd_seq_num = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as u32;
-    this.master = false;
-    //todo begin sending dd packet...
-    log_error!("todo! send dd packet")
+        .as_secs() as u16 as u32;
+    neighbor.master = false;
+    let packet = DBDescription {
+        interface_mtu: 0,
+        options: this.get_neighbor().option,
+        _zeros: PhantomData,
+        init: 1,
+        more: 1,
+        master: 1,
+        db_sequence_number: this.get_neighbor().dd_seq_num,
+        lsa_header: vec![],
+    };
+    this.spawn_master_send_dd(packet);
+}
+
+pub async fn summary_lsa(this: &mut RefNeighbor<'_>) {
+    let areas = ProtocolDB::get().areas.lock().await;
+    guard! {
+        Some(area) = areas.get(&this.get_interface().area_id);
+        error: "Area({}) not found in database!", this.get_interface().area_id
+    };
+    this.get_neighbor()
+        .db_summary_list
+        .extend(area.router_lsa.values().map(|v| v.0.clone()));
+    this.get_neighbor()
+        .db_summary_list
+        .extend(area.network_lsa.values().map(|v| v.0.clone()));
+    this.get_neighbor()
+        .db_summary_list
+        .extend(area.ip_summary_lsa.values().map(|v| v.0.clone()));
+    this.get_neighbor()
+        .db_summary_list
+        .extend(area.asbr_summary_lsa.values().map(|v| v.0.clone()));
+    if this.get_interface().external_routing {
+        this.get_neighbor().db_summary_list.extend(
+            ProtocolDB::get()
+                .as_external_lsa
+                .lock()
+                .await
+                .values()
+                .map(|v| v.0.clone()),
+        );
+    }
 }

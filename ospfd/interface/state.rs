@@ -89,7 +89,7 @@ impl InterfaceEvent for Interface {
         } else {
             InterfaceState::Waiting
         };
-        set_hello_timer(self).await;
+        set_hello_timer(self);
         log_state(InterfaceState::Down, self);
     }
 
@@ -147,7 +147,7 @@ impl InterfaceEvent for Interface {
     }
 }
 
-async fn set_hello_timer(interface: &mut Interface) {
+fn set_hello_timer(interface: &mut Interface) {
     let weak = interface.me.clone();
     interface.hello_timer.abort();
     interface.hello_timer = tokio::spawn(async move {
@@ -155,6 +155,7 @@ async fn set_hello_timer(interface: &mut Interface) {
             let mut interface = interface.lock().await;
             let hello_interval = interface.hello_interval as u64;
             send_hello(interface.deref_mut()).await;
+            drop(interface); // drop here to avoid sleep with a lock...
             sleep(Duration::from_secs(hello_interval)).await;
         }
         crate::log_warning!("interface is dropped, hello timer stopped");
