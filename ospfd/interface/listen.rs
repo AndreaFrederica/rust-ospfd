@@ -3,7 +3,7 @@ use super::{InterfaceEvent, InterfaceState, WInterface};
 pub fn listen_interface(interface: WInterface) {
     tokio::spawn(async move {
         while let Some(interface) = interface.upgrade() {
-            let mut interface = interface.write().await;
+            let mut interface = interface.lock().await;
             let net = interface.get_network_interface();
             if !net.is_up() {
                 interface.interface_down().await;

@@ -152,7 +152,7 @@ async fn set_hello_timer(interface: &mut Interface) {
     interface.hello_timer.abort();
     interface.hello_timer = tokio::spawn(async move {
         while let Some(interface) = weak.upgrade() {
-            let mut interface = interface.write().await;
+            let mut interface = interface.lock().await;
             let hello_interval = interface.hello_interval as u64;
             send_hello(interface.deref_mut()).await;
             sleep(Duration::from_secs(hello_interval)).await;

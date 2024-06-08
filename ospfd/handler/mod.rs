@@ -47,7 +47,7 @@ pub fn ospf_handler_maker(interface: AInterface) -> OspfHandler {
 }
 
 async fn ospf_handle(interface: AInterface, packet: Ospf, src: Ipv4Addr, dest: Ipv4Addr) {
-    let mut interface = interface.write().await;
+    let mut interface = interface.lock().await;
     match packet.area_id {
         x if x == ip2hex(interface.area_id) => (),          // ok
         0 if interface.is_dr() || interface.is_bdr() => (), // ok

@@ -224,7 +224,7 @@ async fn reset_timer(this: &mut RefNeighbor<'_>) {
     this.inactive_timer = tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(dead_interval)).await;
         guard!(Some(iface) = iface.upgrade());
-        let mut iface = iface.write().await;
+        let mut iface = iface.lock().await;
         RefNeighbor::from(iface.deref_mut(), ip)
             .unwrap()
             .inactivity_timer()

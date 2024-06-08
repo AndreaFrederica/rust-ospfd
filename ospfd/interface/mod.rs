@@ -22,7 +22,7 @@ use pnet::{
         transport_channel, TransportChannelType::Layer4, TransportProtocol::Ipv4, TransportSender,
     },
 };
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 pub struct Interface {
     pub me: WInterface,
@@ -59,8 +59,8 @@ pub enum NetType {
     Virtual,
 }
 
-pub type AInterface = Arc<RwLock<Interface>>;
-pub type WInterface = Weak<RwLock<Interface>>;
+pub type AInterface = Arc<Mutex<Interface>>;
+pub type WInterface = Weak<Mutex<Interface>>;
 
 impl Interface {
     pub async fn new(
@@ -70,7 +70,7 @@ impl Interface {
         ip_addr: Ipv4Addr,
         ip_mask: Ipv4Addr,
     ) -> AInterface {
-        let this = Arc::new_cyclic(|me| RwLock::new(Self {
+        let this = Arc::new_cyclic(|me| Mutex::new(Self {
             me: me.clone(),
             interface_name,
             sender,
