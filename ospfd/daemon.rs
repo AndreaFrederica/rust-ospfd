@@ -4,11 +4,11 @@ use tokio::sync::Mutex;
 
 use crate::log_error;
 
-pub trait Runnable {
+pub trait Runnable: Send {
     fn run(&mut self);
 }
 
-pub trait AsyncRunnable {
+pub trait AsyncRunnable: Send {
     fn run_async(&mut self) -> impl std::future::Future<Output = ()> + Send;
 }
 
@@ -16,13 +16,19 @@ pub trait Daemon {
     async fn run_forever(self);
 }
 
-impl<T: Runnable + Send> AsyncRunnable for T {
+impl<T: FnMut() + Send> Runnable for T {
+    fn run(&mut self) {
+        self()
+    }
+}
+
+impl<T: Runnable> AsyncRunnable for T {
     async fn run_async(&mut self) {
         tokio::task::block_in_place(|| self.run());
     }
 }
 
-impl<T: AsyncRunnable + Send + 'static> Daemon for T {
+impl<T: AsyncRunnable + 'static> Daemon for T {
     async fn run_forever(self) {
         let daemon = Arc::new(Mutex::new(self));
         loop {

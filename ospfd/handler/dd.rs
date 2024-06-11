@@ -84,7 +84,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
         _ => return,
     }
     // update database
-    for ref lsa in packet.lsa_header {
+    for lsa in packet.lsa_header {
         must!((1..=5).contains(&lsa.ls_type); else: src.seq_number_mismatch().await);
         must!(lsa.ls_type != lsa::types::AS_EXTERNAL_LSA || iface.external_routing; else: src.seq_number_mismatch().await);
         if ProtocolDB::get().need_update(iface.area_id, lsa).await {

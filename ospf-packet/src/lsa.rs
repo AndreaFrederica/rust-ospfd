@@ -47,7 +47,7 @@ impl FromBuf for Lsa {
 }
 
 #[raw_packet]
-#[derive(Eq)]
+#[derive(Eq, Copy)]
 #[doc = "The LsaHeader impl Ord, the greater the newer"]
 pub struct LsaHeader {
     pub ls_age: u16,
@@ -215,3 +215,30 @@ build_convert!(RouterLSA, (ROUTER_LSA, Router));
 build_convert!(NetworkLSA, (NETWORK_LSA, Network));
 build_convert!(SummaryLSA, (SUMMARY_IP_LSA, SummaryIP), (SUMMARY_ASBR_LSA, SummaryASBR));
 build_convert!(AsExternalLSA, (AS_EXTERNAL_LSA, ASExternal));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LsaIndex {
+    pub ls_type: u8,
+    pub ls_id: u32,
+    pub ad_router: Ipv4Addr,
+}
+
+impl LsaIndex {
+    pub fn new(ls_type: u8, ls_id: u32, ad_router: Ipv4Addr) -> Self {
+        Self {
+            ls_type,
+            ls_id,
+            ad_router,
+        }
+    }
+}
+
+impl From<LsaHeader> for LsaIndex {
+    fn from(value: LsaHeader) -> Self {
+        Self {
+            ls_type: value.ls_type,
+            ls_id: value.link_state_id,
+            ad_router: value.advertising_router,
+        }
+    }
+}

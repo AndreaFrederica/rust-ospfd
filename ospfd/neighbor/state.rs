@@ -283,24 +283,5 @@ pub async fn summary_lsa(this: &mut RefNeighbor<'_>) {
     };
     this.get_neighbor()
         .db_summary_list
-        .extend(area.router_lsa.values().map(|v| v.0.clone()));
-    this.get_neighbor()
-        .db_summary_list
-        .extend(area.network_lsa.values().map(|v| v.0.clone()));
-    this.get_neighbor()
-        .db_summary_list
-        .extend(area.ip_summary_lsa.values().map(|v| v.0.clone()));
-    this.get_neighbor()
-        .db_summary_list
-        .extend(area.asbr_summary_lsa.values().map(|v| v.0.clone()));
-    if this.get_interface().external_routing {
-        this.get_neighbor().db_summary_list.extend(
-            ProtocolDB::get()
-                .as_external_lsa
-                .lock()
-                .await
-                .values()
-                .map(|v| v.0.clone()),
-        );
-    }
+        .extend(area.get_all_lsa().await);
 }
