@@ -147,7 +147,9 @@ pub trait PrimitiveInteger: Copy {
     fn from_u128(val: u128) -> Self;
 }
 
-impl PrimitiveInteger for u8 {
+macro_rules! impl_primitives {
+    ($T:ty $(,$Ts:ty)*) => {
+impl PrimitiveInteger for $T {
     fn to_u128(self) -> u128 {
         self as u128
     }
@@ -156,113 +158,9 @@ impl PrimitiveInteger for u8 {
         val as Self
     }
 }
-
-impl PrimitiveInteger for u16 {
-    fn to_u128(self) -> u128 {
-        self as u128
-    }
-
-    fn from_u128(val: u128) -> Self {
-        val as Self
-    }
+impl_primitives!($($Ts),*);
+    };
+    () => {};
 }
 
-impl PrimitiveInteger for u32 {
-    fn to_u128(self) -> u128 {
-        self as u128
-    }
-
-    fn from_u128(val: u128) -> Self {
-        val as Self
-    }
-}
-
-impl PrimitiveInteger for u64 {
-    fn to_u128(self) -> u128 {
-        self as u128
-    }
-
-    fn from_u128(val: u128) -> Self {
-        val as Self
-    }
-}
-
-impl PrimitiveInteger for u128 {
-    fn to_u128(self) -> u128 {
-        self as u128
-    }
-
-    fn from_u128(val: u128) -> Self {
-        val as Self
-    }
-}
-
-impl ToBytesMut for u8 {
-    fn to_bytes_mut(&self) -> BytesMut {
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf
-    }
-}
-
-impl ToBytesMut for u16 {
-    fn to_bytes_mut(&self) -> BytesMut {
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf
-    }
-}
-
-impl ToBytesMut for u32 {
-    fn to_bytes_mut(&self) -> BytesMut {
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf
-    }
-}
-
-impl ToBytesMut for u64 {
-    fn to_bytes_mut(&self) -> BytesMut {
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf
-    }
-}
-
-impl ToBytesMut for u128 {
-    fn to_bytes_mut(&self) -> BytesMut {
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf
-    }
-}
-
-impl FromBuf for u8 {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        buf.get_u8()
-    }
-}
-
-impl FromBuf for u16 {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        buf.get_u16()
-    }
-}
-
-impl FromBuf for u32 {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        buf.get_u32()
-    }
-}
-
-impl FromBuf for u64 {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        buf.get_u64()
-    }
-}
-
-impl FromBuf for u128 {
-    fn from_buf(buf: &mut impl Buf) -> Self {
-        buf.get_u128()
-    }
-}
+impl_primitives!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);

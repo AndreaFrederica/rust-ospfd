@@ -184,7 +184,7 @@ mod test {
                     ls_type: lsa::types::ROUTER_LSA,
                     link_state_id: 0x04040404,
                     advertising_router: Ipv4Addr::new(4, 5, 6, 7),
-                    ls_sequence_number: 0x8000000b,
+                    ls_sequence_number: 0x8000000bu32 as i32,
                     ls_checksum: 0xe6c8,
                     length: 48,
                 },

@@ -55,7 +55,7 @@ pub struct LsaHeader {
     pub ls_type: u8,
     pub link_state_id: u32,
     pub advertising_router: Ipv4Addr,
-    pub ls_sequence_number: u32,
+    pub ls_sequence_number: i32,
     pub ls_checksum: u16,
     pub length: u16,
 }
