@@ -5,10 +5,13 @@ pub use vlink::VirtualLink;
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock};
 
-use ospf_packet::lsa::{self, AsExternalLSA, Lsa, LsaData, LsaHeader};
+use ospf_packet::lsa::{self, AsExternalLSA, Lsa, LsaHeader};
 use tokio::sync::Mutex;
 
-use crate::{area::{Area, BackboneDB}, guard};
+use crate::{
+    area::{Area, BackboneDB},
+    guard,
+};
 
 type LsaAsExternal = (LsaHeader, AsExternalLSA);
 
@@ -54,20 +57,25 @@ impl ProtocolDB {
         let area = lock.get(&area_id)?;
         let as_external = self.as_external_lsa.lock().await;
         match index.ls_type {
-            lsa::types::ROUTER_LSA => area.router_lsa.get(&index.into()).map(|v| v.clone().into()),
+            lsa::types::ROUTER_LSA => area
+                .router_lsa
+                .get(&index.into())
+                .map(|v| v.clone().try_into().unwrap()),
             lsa::types::NETWORK_LSA => area
                 .network_lsa
                 .get(&index.into())
-                .map(|v| v.clone().into()),
+                .map(|v| v.clone().try_into().unwrap()),
             lsa::types::SUMMARY_IP_LSA => area
                 .ip_summary_lsa
                 .get(&index.into())
-                .map(|(h, d)| (h.clone(), LsaData::SummaryIP(d.clone())).into()),
+                .map(|v| v.clone().try_into().unwrap()),
             lsa::types::SUMMARY_ASBR_LSA => area
                 .asbr_summary_lsa
                 .get(&index.into())
-                .map(|(h, d)| (h.clone(), LsaData::SummaryASBR(d.clone())).into()),
-            lsa::types::AS_EXTERNAL_LSA => as_external.get(&index.into()).map(|v| v.clone().into()),
+                .map(|v| v.clone().try_into().unwrap()),
+            lsa::types::AS_EXTERNAL_LSA => as_external
+                .get(&index.into())
+                .map(|v| v.clone().try_into().unwrap()),
             _ => None,
         }
     }

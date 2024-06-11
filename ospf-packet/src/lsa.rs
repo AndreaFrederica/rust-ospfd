@@ -20,15 +20,6 @@ pub struct Lsa {
     pub data: LsaData,
 }
 
-impl<T: Into<LsaData>> From<(LsaHeader, T)> for Lsa {
-    fn from(value: (LsaHeader, T)) -> Self {
-        Lsa {
-            header: value.0,
-            data: value.1.into(),
-        }
-    }
-}
-
 impl ToBytesMut for Lsa {
     fn to_bytes_mut(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -118,24 +109,6 @@ pub enum LsaData {
     ASExternal(AsExternalLSA),
 }
 
-impl From<RouterLSA> for LsaData {
-    fn from(value: RouterLSA) -> Self {
-        LsaData::Router(value)
-    }
-}
-
-impl From<NetworkLSA> for LsaData {
-    fn from(value: NetworkLSA) -> Self {
-        LsaData::Network(value)
-    }
-}
-
-impl From<AsExternalLSA> for LsaData {
-    fn from(value: AsExternalLSA) -> Self {
-        LsaData::ASExternal(value)
-    }
-}
-
 impl ToBytesMut for LsaData {
     fn to_bytes_mut(&self) -> BytesMut {
         match self {
@@ -189,3 +162,56 @@ pub struct RouterLSALink {
     pub tos: u8,
     pub metric: u16,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConvertError {
+    #[error("Unknown lsa type")]
+    TypeUnknown,
+    #[error("Lsa type mismatched")]
+    TypeMismatched,
+}
+
+macro_rules! unpack {
+    ($x:expr, $i:ident) => {
+        if let $i(y) = $x {
+            y
+        } else {
+            return Err(ConvertError::TypeMismatched);
+        }
+    };
+}
+
+macro_rules! build_convert {
+    ($T:ty, $(($id:ident, $e:ident)),+) => {
+impl TryFrom<(LsaHeader, $T)> for Lsa {
+    type Error = ConvertError;
+
+    fn try_from((header, data): (LsaHeader, $T)) -> Result<Self, Self::Error> {
+        use LsaData::*;
+        match header.ls_type {
+            $(types::$id => Ok(Self { header, data: $e(data) }),)+
+            _x @ 1..=5 => Err(ConvertError::TypeMismatched),
+            _ => Err(ConvertError::TypeUnknown),
+        }
+    }
+}
+
+impl TryFrom<Lsa> for (LsaHeader, $T) {
+    type Error = ConvertError;
+
+    fn try_from(lsa: Lsa) -> Result<Self, Self::Error> {
+        use LsaData::*;
+        match lsa.header.ls_type {
+            $(types::$id => Ok((lsa.header, unpack!(lsa.data, $e))),)+
+            _x @ 1..=5 => Err(ConvertError::TypeMismatched),
+            _ => Err(ConvertError::TypeUnknown),
+        }
+    }
+}
+    };
+}
+
+build_convert!(RouterLSA, (ROUTER_LSA, Router));
+build_convert!(NetworkLSA, (NETWORK_LSA, Network));
+build_convert!(SummaryLSA, (SUMMARY_IP_LSA, SummaryIP), (SUMMARY_ASBR_LSA, SummaryASBR));
+build_convert!(AsExternalLSA, (AS_EXTERNAL_LSA, ASExternal));

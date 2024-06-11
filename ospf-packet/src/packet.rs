@@ -115,6 +115,10 @@ option_ext!(DBDescription);
 
 pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf + std::fmt::Debug {
     fn get_type(&self) -> u8;
+
+    fn get_type_string(&self) -> &'static str {
+        message_type_string(self.get_type())
+    }
 }
 
 impl OspfSubPacket for HelloPacket {

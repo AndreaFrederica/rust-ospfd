@@ -10,3 +10,4 @@ pnet = "0.35.*"                           # raw socket
 pnet_sys = "0.35.*"                       # pnet sys
 pnet_macros = "0.35.*"                    # pnet macros
 pnet_macros_support = "0.35.*"            # pnet macros support
+thiserror = "1.0.*"                       # error handling

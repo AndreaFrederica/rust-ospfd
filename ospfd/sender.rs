@@ -39,7 +39,7 @@ pub async fn send_packet(
     crate::log!(
         "sent packet to {}: {}({} bytes)",
         destination,
-        std::any::type_name_of_val(packet),
+        packet.get_type_string(),
         m_packet.packet().len()
     );
 }
