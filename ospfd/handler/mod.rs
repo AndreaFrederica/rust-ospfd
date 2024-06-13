@@ -4,9 +4,8 @@ mod hello;
 mod lsr;
 mod lsu;
 
-use std::{future::Future, net::Ipv4Addr, ops::DerefMut};
+use std::{net::Ipv4Addr, ops::DerefMut};
 
-use bytes::Buf;
 use ospf_packet::{
     packet::{types::*, *},
     FromBuf, Ospf,
@@ -73,53 +72,11 @@ async fn ospf_handle(interface: AInterface, packet: Ospf, src: Ipv4Addr, dest: I
     }
     let neighbor = RefNeighbor::from(interface.deref_mut(), ip).unwrap();
     match packet.message_type {
-        HELLO_PACKET => handle::<HelloPacket>(neighbor, payload).await,
-        DB_DESCRIPTION => handle::<DBDescription>(neighbor, payload).await,
-        LS_REQUEST => handle::<LSRequest>(neighbor, payload).await,
-        LS_UPDATE => handle::<LSUpdate>(neighbor, payload).await,
-        LS_ACKNOWLEDGE => handle::<LSAcknowledge>(neighbor, payload).await,
+        HELLO_PACKET => hello::handle(neighbor, HelloPacket::from_buf(payload)).await,
+        DB_DESCRIPTION => dd::handle(neighbor, DBDescription::from_buf(payload)).await,
+        LS_REQUEST => lsr::handle(neighbor, LSRequest::from_buf(payload)).await,
+        LS_UPDATE => lsu::handle(neighbor, LSUpdate::from_buf(payload)).await,
+        LS_ACKNOWLEDGE => ack::handle(neighbor, LSAcknowledge::from_buf(payload)).await,
         _ => return, // bad msg type
     }
-}
-
-trait HandlePacket {
-    async fn handle(self, src: RefNeighbor);
-}
-
-impl HandlePacket for LSAcknowledge {
-    fn handle(self, src: RefNeighbor) -> impl Future<Output = ()> {
-        ack::handle(src, self)
-    }
-}
-
-impl HandlePacket for DBDescription {
-    fn handle(self, src: RefNeighbor) -> impl Future<Output = ()> {
-        dd::handle(src, self)
-    }
-}
-
-impl HandlePacket for HelloPacket {
-    fn handle(self, src: RefNeighbor) -> impl Future<Output = ()> {
-        hello::handle(src, self)
-    }
-}
-
-impl HandlePacket for LSRequest {
-    fn handle(self, src: RefNeighbor) -> impl Future<Output = ()> {
-        lsr::handle(src, self)
-    }
-}
-
-impl HandlePacket for LSUpdate {
-    fn handle(self, src: RefNeighbor) -> impl Future<Output = ()> {
-        lsu::handle(src, self)
-    }
-}
-
-async fn handle<T>(src: RefNeighbor<'_>, payload: &mut impl Buf)
-where
-    T: FromBuf + HandlePacket,
-{
-    let packet = T::from_buf(payload);
-    packet.handle(src).await
 }
