@@ -15,9 +15,9 @@ use crate::daemon::Runnable;
 use crate::{log_error, log_success};
 
 #[cfg(debug_assertions)]
-use ospf_packet::{packet, FromBuf};
-#[cfg(debug_assertions)]
 use crate::log;
+#[cfg(debug_assertions)]
+use ospf_packet::{message_type_string, packet, FromBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
@@ -93,6 +93,15 @@ impl CaptureOspfDaemon {
                             // 如果是OSPF协议
                             let packet =
                                 OspfPacket::new(header.payload()).expect("Bad Ospf Packet");
+                            // debug
+                            #[cfg(debug_assertions)]
+                            log!(
+                                "interface({}) receives packet from {}: {} ({} bytes)",
+                                header.get_source(),
+                                header.get_destination(),
+                                message_type_string(packet.get_message_type()),
+                                packet.get_length(),
+                            );
                             handler(header.get_source(), header.get_destination(), packet);
                         }
                         _ => (), // 忽略其他协议

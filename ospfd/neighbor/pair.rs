@@ -138,4 +138,8 @@ impl LsrHandle {
     pub fn is_finished(&self) -> bool {
         self.master.is_finished()
     }
+
+    pub fn child_abort(&self) {
+        self.child.abort();
+    }
 }

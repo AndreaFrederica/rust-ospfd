@@ -11,6 +11,7 @@ use ospf_packet::{
 use crate::{
     constant::{AllDRouters, AllSPFRouters, LsaMaxAge, MaxSequenceNumber, MinLSArrival},
     database::{InterfacesGuard, ProtocolDB},
+    handler::flooding::flooding,
     interface::InterfaceState,
     log_error, log_warning, must,
     neighbor::{NeighborEvent, NeighborState, RefNeighbor},
@@ -117,7 +118,7 @@ async fn handle_one(
             return ret!(continue);
         }
         // b）否则，立即将新 LSA 洪泛出路由器的某些接口（见第 13.3 节）
-        let flood = flooding(meta, &lsa).await;
+        let flood = flooding(&mut meta.0, meta.1, &lsa).await;
         // c）将当前数据库中的副本，从所有的邻居连接状态重传列表中删除。
         if let Some((db_lsa, ..)) = db_lsa.as_ref() {
             for iface in meta.0.iter_mut() {
@@ -192,10 +193,4 @@ async fn handle_one(
         }
         ret!(continue)
     }
-}
-
-async fn flooding(meta: &mut Metadata, lsa: &Lsa) -> bool {
-    log_error!("todo: flooding this lsa {:?}", lsa.header);
-    let _ = meta;
-    false
 }

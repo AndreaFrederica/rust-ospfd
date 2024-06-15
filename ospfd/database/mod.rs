@@ -72,14 +72,10 @@ impl ProtocolDB {
             .collect()
     }
 
-    pub async fn get_interfaces() -> Vec<Guard<Interface>> {
-        tokio::task::block_in_place(Self::get_interfaces_impl)
-    }
-
     pub async fn upgrade_lock(iface: MutexGuard<'_, Interface>) -> InterfacesGuard {
         let ip = iface.ip_addr;
         drop(iface);
-        let interfaces = Self::get_interfaces().await;
+        let interfaces = tokio::task::block_in_place(Self::get_interfaces_impl);
         InterfacesGuard::from(interfaces, ip)
     }
 

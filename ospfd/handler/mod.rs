@@ -1,5 +1,6 @@
 mod ack;
 mod dd;
+mod flooding;
 mod hello;
 mod lsr;
 mod lsu;
@@ -25,14 +26,6 @@ use crate::{
 #[doc = "首先检查 ospf 报头，对于合法报头，发送给对应报文处理器处理"]
 pub fn ospf_handler_maker(interface: AInterface) -> OspfHandler {
     Box::new(move |src, dest, packet| {
-        // debug
-        #[cfg(debug_assertions)]
-        crate::log!(
-            "packet received from {}: {} ({} bytes)",
-            src,
-            message_type_string(packet.get_message_type()),
-            packet.get_length()
-        );
         // the src & dest has already checked
         if !packet.auto_test_checksum() || packet.get_version() != 2 {
             return;

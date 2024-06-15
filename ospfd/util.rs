@@ -21,6 +21,18 @@ macro_rules! must {
             return $($val)?;
         }
     };
+    ($x:expr $(;else:$op:expr)?; continue $(;)?) => {
+        if !($x) {
+            $($op;)?
+            continue;
+        }
+    };
+    ($x:expr $(;else:$op:expr)?; break $($val:expr)? $(;)?) => {
+        if !($x) {
+            $($op;)?
+            break $($val)?;
+        }
+    };
     ($x:expr; dbg: $($arg:tt)*) => {
         if !($x) {
             #[cfg(debug_assertions)]
@@ -49,6 +61,18 @@ macro_rules! guard {
             $($op;)?
             return $($val)?;
         };
+    };
+    ($x:pat = $y:expr $(;else:$op:expr)?; continue $(;)?) => {
+        let $x = $y else {
+            $($op;)?
+            continue;
+        }
+    };
+    ($x:pat = $y:expr $(;else:$op:expr)?; break $($val:expr)? $(;)?) => {
+        let $x = $y else {
+            $($op;)?
+            break $($val)?;
+        }
     };
     ($x:pat = $y:expr; dbg: $($arg:tt)*) => {
         let $x = $y else {
