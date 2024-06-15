@@ -54,9 +54,7 @@ fn log_event(event: &str, neighbor: &Neighbor) {
 }
 
 fn log_state(old: NeighborState, neighbor: &Neighbor) {
-    if old == neighbor.state {
-        return;
-    }
+    must!(old != neighbor.state);
     log_success!(
         "neighbor {}({})'s state changed: {:?} -> {:?}",
         neighbor.router_id,

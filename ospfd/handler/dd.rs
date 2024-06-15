@@ -43,6 +43,8 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
                 // 而且邻居路由器标识比自身路由器标识要小
                 neighbor.master = false;
                 src.negotiation_done().await;
+            } else {
+                return;
             }
         }
         NeighborState::Exchange | NeighborState::Loading | NeighborState::Full

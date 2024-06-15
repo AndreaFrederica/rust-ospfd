@@ -53,6 +53,7 @@ fn log_event(event: &str, interface: &Interface) {
 }
 
 fn log_state(old: InterfaceState, interface: &Interface) {
+    must!(old != interface.state);
     log_success!(
         "interface {}'s state changed: {:?} -> {:?}",
         interface.interface_name,
