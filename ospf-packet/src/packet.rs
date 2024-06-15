@@ -92,7 +92,7 @@ pub struct DBDescription {
 #[raw_packet]
 pub struct LSRequest {
     pub ls_type: u32,
-    pub ls_id: u32,
+    pub ls_id: Ipv4Addr,
     pub advertising_router: Ipv4Addr,
 }
 
@@ -190,7 +190,7 @@ mod test {
                     ls_age: 10,
                     options: 0x0002,
                     ls_type: lsa::types::ROUTER_LSA,
-                    link_state_id: 0x04040404,
+                    link_state_id: Ipv4Addr::new(4, 4, 4, 4),
                     advertising_router: Ipv4Addr::new(4, 5, 6, 7),
                     ls_sequence_number: 0x8000000bu32 as i32,
                     ls_checksum: 0xe6c8,

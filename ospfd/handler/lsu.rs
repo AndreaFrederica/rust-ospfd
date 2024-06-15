@@ -1,13 +1,17 @@
 use std::{net::Ipv4Addr, ops::ControlFlow};
 
 use ospf_packet::{
-    lsa::{types::AS_EXTERNAL_LSA, Lsa, LsaIndex},
+    lsa::{
+        types::{AS_EXTERNAL_LSA, NETWORK_LSA},
+        Lsa, LsaHeader, LsaIndex,
+    },
     packet::{LSAcknowledge, LSUpdate},
 };
 
 use crate::{
-    constant::{LsaMaxAge, MaxSequenceNumber, MinLSArrival},
+    constant::{AllDRouters, AllSPFRouters, LsaMaxAge, MaxSequenceNumber, MinLSArrival},
     database::{InterfacesGuard, ProtocolDB},
+    interface::InterfaceState,
     log_error, log_warning, must,
     neighbor::{NeighborEvent, NeighborState, RefNeighbor},
     sender::send_packet,
@@ -23,12 +27,22 @@ macro_rules! ret {
 }
 
 pub async fn handle(interfaces: InterfacesGuard, src_ip: Ipv4Addr, packet: LSUpdate) {
+    let mut delay = vec![];
     let mut meta = Metadata(interfaces, src_ip);
     for lsa in packet.lsa {
-        match handle_one(&mut meta, lsa).await {
+        match handle_one(&mut meta, lsa, &mut delay).await {
             ret!(continue) => continue,
             ret!(break) => break,
         }
+    }
+    if !delay.is_empty() {
+        let dest = if meta.0.me.is_drother() {
+            AllDRouters
+        } else {
+            AllSPFRouters
+        };
+        let packet = LSAcknowledge { lsa_header: delay };
+        send_packet(&mut meta.0.me, &packet, dest).await;
     }
 }
 
@@ -55,7 +69,11 @@ macro_rules! neighbor {
     };
 }
 
-async fn handle_one(meta: &mut Metadata, lsa: Lsa) -> ControlFlow<(), ()> {
+async fn handle_one(
+    meta: &mut Metadata,
+    lsa: Lsa,
+    vec: &mut Vec<LsaHeader>,
+) -> ControlFlow<(), ()> {
     // 1. 确认 LSA 的 LS 校验和。
     must!(lsa.checksum_ok(); ret: ret!(continue));
     // 2. 检查 LSA 的 LS 类型。
@@ -99,7 +117,7 @@ async fn handle_one(meta: &mut Metadata, lsa: Lsa) -> ControlFlow<(), ()> {
             return ret!(continue);
         }
         // b）否则，立即将新 LSA 洪泛出路由器的某些接口（见第 13.3 节）
-        log_error!("todo: flooding this lsa {:?}", lsa.header);
+        let flood = flooding(meta, &lsa).await;
         // c）将当前数据库中的副本，从所有的邻居连接状态重传列表中删除。
         if let Some((db_lsa, ..)) = db_lsa.as_ref() {
             for iface in meta.0.iter_mut() {
@@ -111,14 +129,23 @@ async fn handle_one(meta: &mut Metadata, lsa: Lsa) -> ControlFlow<(), ()> {
             }
         }
         // d) 将新的 LSA 加入连接状态数据库（取代当前数据库的副本），这可能导致按调度计算路由表
-        invoke!(meta.insert_lsa, lsa);
+        invoke!(meta.insert_lsa, lsa.clone());
         log_warning!("todo: recalculate routing table");
         // e）也许需要从接收接口发送 LSAck 包以确认所收到的 LSA。这在第 13.5 节说明。
-        log_error!("todo: may send lsack");
+        if !flood {
+            if meta.0.me.state != InterfaceState::Backup || neighbor!(meta).is_dr() {
+                vec.push(lsa.header);
+            }
+        }
         // f）如果这个新的 LSA 是由路由器自身所生成的（即被作为自生成 LSA），
         //    路由器执行特殊的操作，或许更新该 LSA，或将其从路由域中删除。
         //    自生成 LSA 的删除以及随后操作的描述，见第 13.4 节。
-        log_error!("todo: deal with self created lsa");
+        if lsa.header.advertising_router == ProtocolDB::get_router_id()
+            || lsa.header.ls_type == NETWORK_LSA
+                && meta.0.iter().any(|i| i.ip_addr == lsa.header.link_state_id)
+        {
+            log_error!("todo: deal with self created lsa");
+        }
         return ret!(continue);
     }
     // 6.否则，如果该 LSA 的实例正在邻居的连接状态请求列表上，产生数据库交换过程的错误。
@@ -133,12 +160,20 @@ async fn handle_one(meta: &mut Metadata, lsa: Lsa) -> ControlFlow<(), ()> {
         // a）如果 LSA 在所接收邻居的连接状态重传列表上，表示路由器自身正期待着这一 LSA 的确认。
         //   路由器可以将这一 LSA 作为确认，并将其从连接状态重传列表中去除。这被称为”隐含确认”，
         //   这需要在后面的确认过程中注意（见第 13.5 节）。
-        if !neighbor!(meta)
+        if neighbor!(meta)
             .ls_retransmission_list
             .remove(&lsa.header.into())
         {
+            if meta.0.me.state == InterfaceState::Backup && neighbor!(meta).is_dr() {
+                // send delay ls ack
+                vec.push(lsa.header);
+            }
+        } else {
             // b）也许需要从接收接口发送 LSAck 包以确认所收到的 LSA。这在第 13.5 节说明。
-            log_error!("todo: may send lsack");
+            let packet = LSAcknowledge {
+                lsa_header: vec![lsa.header],
+            };
+            send_packet(&mut meta.0.me, &packet, meta.1).await;
         }
         return ret!(continue);
     }
@@ -157,4 +192,10 @@ async fn handle_one(meta: &mut Metadata, lsa: Lsa) -> ControlFlow<(), ()> {
         }
         ret!(continue)
     }
+}
+
+async fn flooding(meta: &mut Metadata, lsa: &Lsa) -> bool {
+    log_error!("todo: flooding this lsa {:?}", lsa.header);
+    let _ = meta;
+    false
 }

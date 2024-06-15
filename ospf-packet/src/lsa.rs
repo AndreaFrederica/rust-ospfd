@@ -89,7 +89,7 @@ pub struct LsaHeader {
     pub ls_age: u16,
     pub options: u8,
     pub ls_type: u8,
-    pub link_state_id: u32,
+    pub link_state_id: Ipv4Addr,
     pub advertising_router: Ipv4Addr,
     pub ls_sequence_number: i32,
     pub ls_checksum: u16,
@@ -255,12 +255,12 @@ build_convert!(AsExternalLSA, (AS_EXTERNAL_LSA, ASExternal));
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LsaIndex {
     pub ls_type: u8,
-    pub ls_id: u32,
+    pub ls_id: Ipv4Addr,
     pub ad_router: Ipv4Addr,
 }
 
 impl LsaIndex {
-    pub fn new(ls_type: u8, ls_id: u32, ad_router: Ipv4Addr) -> Self {
+    pub fn new(ls_type: u8, ls_id: Ipv4Addr, ad_router: Ipv4Addr) -> Self {
         Self {
             ls_type,
             ls_id,
