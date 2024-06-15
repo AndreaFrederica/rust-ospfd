@@ -3,7 +3,7 @@ mod vlink;
 pub use routing::RoutingTable;
 pub use vlink::VirtualLink;
 
-use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock};
+use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock, time::Instant};
 
 use lazy_static::lazy_static;
 pub use ospf_packet::lsa::LsaIndex;
@@ -12,7 +12,6 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use crate::{
     area::{Area, BackboneDB},
-    guard,
     interface::{AInterface, Interface},
 };
 
@@ -64,17 +63,20 @@ impl ProtocolDB {
 
     /// # Safety
     /// This function should be awaited when caller hasn't have any locks.
-    pub async fn get_interfaces() -> Vec<Guard<Interface>> {
-        let rt = tokio::runtime::Handle::current();
+    fn get_interfaces_impl() -> Vec<Guard<Interface>> {
         INTERFACES
             .get()
             .unwrap()
             .iter()
-            .map(|iface| rt.block_on(iface.lock()))
+            .map(|iface| iface.blocking_lock())
             .collect()
     }
 
-    pub async fn upgrade_lock(iface: Guard<Interface>) -> InterfacesGuard {
+    pub async fn get_interfaces() -> Vec<Guard<Interface>> {
+        tokio::task::block_in_place(Self::get_interfaces_impl)
+    }
+
+    pub async fn upgrade_lock(iface: MutexGuard<'_, Interface>) -> InterfacesGuard {
         let ip = iface.ip_addr;
         drop(iface);
         let interfaces = Self::get_interfaces().await;
@@ -92,19 +94,27 @@ impl ProtocolDB {
             self.areas.insert(area_id, Area::new(area_id));
         }
     }
+}
 
-    pub async fn get_lsa(&self, area_id: Ipv4Addr, key: LsaIndex) -> Option<Lsa> {
-        self.areas.get(&area_id)?.get_lsa(key).await
-    }
+macro_rules! delegating {
+    ($func:ident, $param:ty $(,$ret:ty)?) => {
+        pub async fn $func(&self, area_id: Ipv4Addr, key: $param) $(-> $ret)? {
+            self.areas.get(&area_id).unwrap().$func(key).await
+        }
+    };
+    ($func:ident, mut, $param:ty $(,$ret:ty)?) => {
+        pub async fn $func(&mut self, area_id: Ipv4Addr, key: $param) $(-> $ret)? {
+            self.areas.get_mut(&area_id).unwrap().$func(key).await
+        }
+    };
+}
 
-    pub async fn insert_lsa(&mut self, area_id: Ipv4Addr, lsa: Lsa) -> bool {
-        self.areas.get_mut(&area_id).unwrap().insert_lsa(lsa).await
-    }
-
-    pub async fn need_update(&self, area_id: Ipv4Addr, lsa: LsaHeader) -> bool {
-        guard!(Some(me) = self.get_lsa(area_id, lsa.into()).await; ret: true);
-        lsa > me.header
-    }
+impl ProtocolDB {
+    delegating!(insert_lsa, mut, Lsa);
+    delegating!(get_lsa, LsaIndex, Option<(Lsa, Instant, Instant)>);
+    delegating!(contains_lsa, LsaIndex, bool);
+    delegating!(need_update, LsaHeader, bool);
+    delegating!(lsa_has_sent, mut, &Lsa);
 }
 
 pub struct InterfacesGuard {
@@ -120,6 +130,10 @@ impl InterfacesGuard {
 
     pub fn iter(&self) -> impl Iterator<Item = &Guard<Interface>> {
         std::iter::once(&self.me).chain(self.other.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Guard<Interface>> {
+        std::iter::once(&mut self.me).chain(self.other.iter_mut())
     }
 }
 

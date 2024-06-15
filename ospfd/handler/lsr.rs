@@ -12,7 +12,7 @@ use crate::{
 pub async fn handle(mut src: RefNeighbor<'_>, packet: LSRequest) {
     must!(neighbor.state >= NeighborState::Exchange);
     guard! {
-        Some(lsa) = ProtocolDB::get().await.get_lsa(
+        Some((lsa, ..)) = ProtocolDB::get().await.get_lsa(
             iface.area_id,
             LsaIndex::new(
                 packet.ls_type as u8,

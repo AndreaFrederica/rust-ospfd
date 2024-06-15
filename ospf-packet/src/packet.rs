@@ -119,6 +119,10 @@ pub trait OspfSubPacket: ToBytes + ToBytesMut + FromBuf + std::fmt::Debug {
     fn get_type_string(&self) -> &'static str {
         message_type_string(self.get_type())
     }
+
+    fn get_lsa_and_then(&self, f: impl FnMut(&Lsa)) {
+        let _ = f;
+    }
 }
 
 impl OspfSubPacket for HelloPacket {
@@ -142,6 +146,10 @@ impl OspfSubPacket for LSRequest {
 impl OspfSubPacket for LSUpdate {
     fn get_type(&self) -> u8 {
         types::LS_UPDATE
+    }
+
+    fn get_lsa_and_then(&self, f: impl FnMut(&Lsa)) {
+        self.lsa.iter().for_each(f);
     }
 }
 

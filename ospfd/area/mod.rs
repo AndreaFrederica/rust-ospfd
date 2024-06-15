@@ -16,11 +16,10 @@ use tokio::sync::Mutex;
 
 use lsa::LsaTimer;
 
-use crate::{
-    constant::{LsaMaxAge, MinLSArrival},
-    database::ProtocolDB,
-};
-type LsaDB = HashMap<LsaIndex, (Lsa, LsaTimer)>;
+use crate::{constant::LsaMaxAge, database::ProtocolDB, guard};
+
+/// (lsa, created_at, updated_at)
+type LsaDB = HashMap<LsaIndex, (Lsa, LsaTimer, Instant)>;
 
 lazy_static! {
     /// AS External LSA database
@@ -32,7 +31,7 @@ pub struct Area {
     pub area_id: Ipv4Addr,
     /// ［地址、掩码］-> 宣告状态
     pub addr_range: BTreeMap<(Ipv4Addr, Ipv4Addr), bool>,
-    pub lsa_database: LsaDB,
+    lsa_database: LsaDB,
     pub short_path_tree: ShortPathTree,
     pub transit_capability: bool,
     pub external_routing_capability: bool,
@@ -62,21 +61,22 @@ impl Area {
         }
     }
 
-    fn m_get_lsa(&self, db: &LsaDB, key: LsaIndex) -> Option<(Lsa, Instant)> {
+    fn m_get_lsa(&self, db: &LsaDB, key: LsaIndex) -> Option<(Lsa, Instant, Instant)> {
         self.lsa_database
             .get(&key)
             .or(self.m_external_db(db)?.get(&key))
-            .map(|(lsa, timer)| (timer.update_lsa_age(lsa.clone()), timer.get_created()))
+            .map(|(lsa, timer, up)| (timer.update_lsa_age(lsa.clone()), timer.get_created(), *up))
     }
 
     fn m_insert_lsa(&mut self, db: &mut LsaDB, key: LsaIndex, value: Lsa) {
         let t = (LsaMaxAge - value.header.ls_age) as u64;
         let timer = LsaTimer::new(t, refresh_lsa(self.area_id, value.clone()));
         if self.external_routing_capability && matches!(key.ls_type, AS_EXTERNAL_LSA) {
-            db.insert(key, (value, timer));
+            db.insert(key, (value, timer, Instant::now()));
         } else {
             assert!(!matches!(key.ls_type, AS_EXTERNAL_LSA));
-            self.lsa_database.insert(key, (value, timer));
+            self.lsa_database
+                .insert(key, (value, timer, Instant::now()));
         }
     }
 
@@ -92,22 +92,22 @@ impl Area {
             || self.external_routing_capability && db.contains_key(&key)
     }
 
-    pub async fn get_lsa(&self, key: LsaIndex) -> Option<Lsa> {
+    pub async fn get_lsa(&self, key: LsaIndex) -> Option<(Lsa, Instant, Instant)> {
         let db = STATIC_DB.lock().await;
-        self.m_get_lsa(&db, key).map(|(lsa, ..)| lsa)
+        self.m_get_lsa(&db, key)
     }
 
     pub async fn get_all_lsa(&self) -> Vec<LsaHeader> {
         let my = self
             .lsa_database
             .values()
-            .map(|(lsa, timer)| timer.update_lsa_age_header(lsa.header.clone()))
+            .map(|(lsa, timer, _)| timer.update_lsa_age_header(lsa.header.clone()))
             .filter(|header| header.ls_age != LsaMaxAge);
         if self.external_routing_capability {
             let db = STATIC_DB.lock().await;
             my.chain(
                 db.values()
-                    .map(|(lsa, timer)| timer.update_lsa_age_header(lsa.header.clone()))
+                    .map(|(lsa, timer, _)| timer.update_lsa_age_header(lsa.header.clone()))
                     .filter(|header| header.ls_age != LsaMaxAge),
             )
             .collect()
@@ -116,24 +116,34 @@ impl Area {
         }
     }
 
-    pub async fn insert_lsa(&mut self, value: Lsa) -> bool {
-        let key = value.header.into();
-        let mut db = STATIC_DB.lock().await;
-        if let Some((lsa, t)) = self.m_get_lsa(&db, key) {
-            if t.elapsed().as_secs() < MinLSArrival.into() {
-                return false;
-            }
-            if lsa.header > value.header {
+    pub async fn need_update(&self, header: LsaHeader) -> bool {
+        let key = header.into();
+        let db = STATIC_DB.lock().await;
+        if let Some((lsa, ..)) = self.m_get_lsa(&db, key) {
+            if lsa.header > header {
                 return false;
             }
         }
-        self.m_insert_lsa(&mut db, key, value);
         true
+    }
+
+    pub async fn insert_lsa(&mut self, value: Lsa) {
+        assert!(self.need_update(value.header).await);
+        let mut db = STATIC_DB.lock().await;
+        self.m_insert_lsa(&mut db, value.header.into(), value);
     }
 
     pub async fn remove_lsa(&mut self, key: LsaIndex) {
         let mut db = STATIC_DB.lock().await;
         self.m_remove_lsa(&mut db, key);
+    }
+
+    pub async fn lsa_has_sent(&mut self, lsa: &Lsa) {
+        let key = lsa.header.into();
+        let mut db = self.m_external_db(STATIC_DB.lock().await);
+        let external = db.as_mut().and_then(|db| db.get_mut(&key));
+        guard!(Some(db) = self.lsa_database.get_mut(&key).or(external));
+        db.2 = Instant::now();
     }
 }
 

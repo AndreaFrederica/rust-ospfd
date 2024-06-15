@@ -14,6 +14,7 @@ use ospf_packet::{
 use crate::{
     capture::OspfHandler,
     constant::AllDRouters,
+    database::ProtocolDB,
     interface::{AInterface, NetType},
     log_error,
     neighbor::{Neighbor, RefNeighbor},
@@ -75,7 +76,14 @@ async fn ospf_handle(interface: AInterface, packet: Ospf, src: Ipv4Addr, dest: I
         HELLO_PACKET => hello::handle(neighbor, HelloPacket::from_buf(payload)).await,
         DB_DESCRIPTION => dd::handle(neighbor, DBDescription::from_buf(payload)).await,
         LS_REQUEST => lsr::handle(neighbor, LSRequest::from_buf(payload)).await,
-        LS_UPDATE => lsu::handle(neighbor, LSUpdate::from_buf(payload)).await,
+        LS_UPDATE => {
+            lsu::handle(
+                ProtocolDB::upgrade_lock(interface).await,
+                ip,
+                LSUpdate::from_buf(payload),
+            )
+            .await
+        }
         LS_ACKNOWLEDGE => ack::handle(neighbor, LSAcknowledge::from_buf(payload)).await,
         _ => return, // bad msg type
     }

@@ -35,6 +35,14 @@ pub async fn send_packet(
         Ok(n) => assert_eq!(n, m_packet.packet().len()),
         Err(e) => panic!("failed to send packet: {}", e),
     }
+    // try update lsa in database
+    tokio::task::block_in_place(|| packet.get_lsa_and_then(|lsa| {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(
+            rt.block_on(ProtocolDB::get())
+                .lsa_has_sent(iface.area_id, lsa),
+        )
+    }));
     #[cfg(debug_assertions)]
     crate::log!(
         "sent packet to {}: {}({} bytes)",

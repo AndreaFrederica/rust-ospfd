@@ -20,6 +20,42 @@ pub struct Lsa {
     pub data: LsaData,
 }
 
+impl Lsa {
+    pub fn checksum(&self) -> u16 {
+        let mut c0 = 0u16;
+        let mut c1 = 0u16;
+        let mut buf = self.to_bytes_mut();
+        buf[16] = 0; // ls_checksum
+        buf[17] = 0; // ls_checksum
+        let _ = buf.split_to(2); // drop ls_age
+        for &byte in buf.as_ref() {
+            c0 = (c0 + byte as u16) % 0xFF;
+            c1 = (c1 + c0) % 0xFF;
+        }
+        let (c0, c1) = (c0 as i32, c1 as i32);
+        let mul = (self.header.length as i32 - 16) * c0;
+        let mut x = mul - c0 - c1;
+        let mut y = c1 - mul - 1;
+        if y >= 0 { y += 1; }
+        if x < 0 { x -= 1; }
+        x %= 255;
+        y %= 255;
+        if x == 0 { x = 255; }
+        if y == 0 { y = 255; }
+        y &= 0x00FF;
+        let (x, y) = (x as u16, y as u16);
+        (x << 8) | y
+    }
+
+    pub fn checksum_ok(&self) -> bool {
+        self.checksum() == self.header.ls_checksum
+    }
+
+    pub fn update_checksum(&mut self) {
+        self.header.ls_checksum = self.checksum();
+    }
+}
+
 impl ToBytesMut for Lsa {
     fn to_bytes_mut(&self) -> BytesMut {
         let mut buf = BytesMut::new();
