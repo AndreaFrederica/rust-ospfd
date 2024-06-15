@@ -116,6 +116,27 @@ impl Interface {
                 e
             ),
         };
+        let mut opt: libc::ifreq = unsafe { std::mem::zeroed() };
+        assert!(iface.name.len() < std::mem::size_of_val(&opt.ifr_name));
+        unsafe {
+            libc::memcpy(
+                std::ptr::from_mut(&mut opt) as *mut libc::c_void,
+                std::ptr::from_ref(iface.name.as_bytes()) as *const libc::c_void,
+                iface.name.len(),
+            );
+        }
+        if unsafe {
+            libc::setsockopt(
+                tx.socket.fd,
+                libc::SOL_SOCKET,
+                libc::SO_BINDTODEVICE,
+                std::ptr::from_ref(&opt) as *const libc::c_void,
+                std::mem::size_of_val(&opt) as u32,
+            )
+        } == -1
+        {
+            panic!("set socket opt failed: {}", std::io::Error::last_os_error());
+        }
         Self::new(area_id, iface.name.to_string(), tx, ip.ip(), ip.mask())
     }
 
