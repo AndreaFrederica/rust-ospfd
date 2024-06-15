@@ -120,7 +120,7 @@ impl Area {
         let key = header.into();
         let db = STATIC_DB.lock().await;
         if let Some((lsa, ..)) = self.m_get_lsa(&db, key) {
-            if lsa.header > header {
+            if lsa.header >= header {
                 return false;
             }
         }

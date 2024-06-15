@@ -273,7 +273,7 @@ fn ex_start(this: &mut RefNeighbor<'_>) {
     this.spawn_master_send_dd(packet);
 }
 
-pub async fn summary_lsa(this: &mut RefNeighbor<'_>) {
+async fn summary_lsa(this: &mut RefNeighbor<'_>) {
     let areas = &ProtocolDB::get().await.areas;
     guard! {
         Some(area) = areas.get(&this.get_interface().area_id);

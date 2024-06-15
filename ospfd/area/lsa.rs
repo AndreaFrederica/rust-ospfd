@@ -5,8 +5,7 @@
 /// 中删除（见第 10 章）。
 
 use std::{
-    future::Future,
-    time::{Duration, Instant},
+    fmt::Debug, future::Future, time::{Duration, Instant}
 };
 
 use ospf_packet::lsa::{Lsa, LsaHeader};
@@ -41,18 +40,23 @@ impl LsaTimer {
     }
 
     pub fn update_lsa_age(&self, mut lsa: Lsa) -> Lsa {
-        let age = lsa.header.ls_age as u64 + self.created.elapsed().as_secs();
-        lsa.header.ls_age = age.max(LsaMaxAge as u64) as u16;
+        lsa.header = self.update_lsa_age_header(lsa.header);
         lsa
     }
 
     pub fn update_lsa_age_header(&self, mut header: LsaHeader) -> LsaHeader {
         let age = header.ls_age as u64 + self.created.elapsed().as_secs();
-        header.ls_age = age.max(LsaMaxAge as u64) as u16;
+        header.ls_age = age.min(LsaMaxAge as u64) as u16;
         header
     }
 
     pub fn get_created(&self) -> Instant {
         self.created
+    }
+}
+
+impl Debug for LsaTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.created.fmt(f)
     }
 }
