@@ -10,7 +10,7 @@ async fn create_packet(interface: &Interface, packet: &impl OspfSubPacket) -> Os
         version: 2,
         message_type: packet.get_type(),
         length: 0, // assign later
-        router_id: ip2hex(ProtocolDB::get().router_id),
+        router_id: ip2hex(ProtocolDB::get_router_id()),
         area_id: ip2hex(interface.area_id),
         checksum: 0, // assign later
         au_type: interface.au_type,

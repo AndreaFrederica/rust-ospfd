@@ -276,7 +276,7 @@ fn ex_start(this: &mut RefNeighbor<'_>) {
 }
 
 pub async fn summary_lsa(this: &mut RefNeighbor<'_>) {
-    let areas = ProtocolDB::get().areas.lock().await;
+    let areas = &ProtocolDB::get().await.areas;
     guard! {
         Some(area) = areas.get(&this.get_interface().area_id);
         error: "Area({}) not found in database!", this.get_interface().area_id

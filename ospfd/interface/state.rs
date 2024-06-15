@@ -214,7 +214,7 @@ impl From<&Interface> for SelectDr {
     fn from(value: &Interface) -> Self {
         SelectDr {
             priority: value.router_priority,
-            id: ProtocolDB::get().router_id,
+            id: ProtocolDB::get_router_id(),
             ip: value.ip_addr,
             bdr: value.bdr,
             dr: value.dr,

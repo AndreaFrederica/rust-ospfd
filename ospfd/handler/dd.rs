@@ -27,7 +27,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
                 && dd_cache.more
                 && dd_cache.master
                 && packet.lsa_header.is_empty()
-                && prev_state.router_id > ProtocolDB::get().router_id
+                && prev_state.router_id > ProtocolDB::get_router_id()
             {
                 // 设定了I,M,MS选项位，包的其他部分为空，且邻居路由器标识比自身路由器标识要大
                 neighbor.option = packet.options;
@@ -37,7 +37,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
             } else if !dd_cache.init
                 && !dd_cache.master
                 && dd_cache.sequence_number == prev_state.dd_seq_num
-                && prev_state.router_id < ProtocolDB::get().router_id
+                && prev_state.router_id < ProtocolDB::get_router_id()
             {
                 // 清除了I,MS选项位，且包中的 DD 序号等于邻居数据结构中的 DD 序号（标明为确认）
                 // 而且邻居路由器标识比自身路由器标识要小
@@ -87,7 +87,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
     for lsa in packet.lsa_header {
         must!((1..=5).contains(&lsa.ls_type); else: src.seq_number_mismatch().await);
         must!(lsa.ls_type != lsa::types::AS_EXTERNAL_LSA || iface.external_routing; else: src.seq_number_mismatch().await);
-        if ProtocolDB::get().need_update(iface.area_id, lsa).await {
+        if ProtocolDB::get().await.need_update(iface.area_id, lsa).await {
             neighbor.ls_request_list.push_back(lsa.clone());
         }
     }

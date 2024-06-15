@@ -139,7 +139,7 @@ impl Area {
 
 async fn refresh_lsa(area_id: Ipv4Addr, lsa: Lsa) {
     crate::log_error!("lsa in {area_id} expired: {lsa:?}");
-    let mut lock = ProtocolDB::get().areas.lock().await;
+    let lock = &mut ProtocolDB::get().await.areas;
     let area = lock.get_mut(&area_id).unwrap();
     area.remove_lsa(lsa.header.into()).await;
     todo!()

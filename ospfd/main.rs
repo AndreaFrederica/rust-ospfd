@@ -10,35 +10,32 @@ mod neighbor;
 mod sender;
 mod util;
 
-use std::net::IpAddr;
-
 use constant::BackboneArea;
 use daemon::Daemon;
 use database::ProtocolDB;
-use pnet::datalink;
+use interface::{AInterface, Interface};
+use pnet::datalink::{self, NetworkInterface};
 
 #[tokio::main()]
 async fn main() {
-    let iface = datalink::interfaces()
-        .into_iter()
-        .filter(|i| i.name == "eth0")
-        .next()
-        .expect("There is no interface named eth0");
-    let IpAddr::V4(ip) = iface
-        .ips
-        .iter()
-        .filter(|i| i.is_ipv4())
-        .next()
-        .unwrap()
-        .ip()
-    else {
-        panic!("The interface do NOT have an ipv4 address");
+    ProtocolDB::get().await.insert_area(BackboneArea).await;
+    let interfaces: Vec<_> = datalink::interfaces().iter().filter_map(start).collect();
+    if interfaces.is_empty() {
+        panic!("No interface is available");
+    }
+    ProtocolDB::init(&interfaces);
+    interfaces.iter().for_each(|i| Interface::start(i));
+    loop {}
+}
+
+fn start(iface: &NetworkInterface) -> Option<AInterface> {
+    if iface.ips.iter().find(|i| i.is_ipv4()).is_none() {
+        log_warning!("The interface {} do NOT have an ipv4 address", iface.name);
+        return None;
     };
-    ProtocolDB::init(ip);
-    let interface = interface::Interface::from(&iface, BackboneArea).await;
+    let interface = interface::Interface::from(&iface, BackboneArea);
     let ospf_handler = handler::ospf_handler_maker(interface.clone());
     let capture_daemon = capture::CaptureOspfDaemon::new(&iface, ospf_handler).unwrap();
-
-    let hd = tokio::spawn(capture_daemon.run_forever());
-    hd.await.unwrap();
+    tokio::spawn(capture_daemon.run_forever());
+    Some(interface)
 }

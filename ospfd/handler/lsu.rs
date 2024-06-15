@@ -10,7 +10,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: LSUpdate) {
             if LsaIndex::from(lsa.header) == LsaIndex::from(*header) {
                 src.lsr_recv_update();
                 log_error!("update database!!");
-                ProtocolDB::get().insert_lsa(iface.area_id, lsa.clone()).await;
+                ProtocolDB::get().await.insert_lsa(iface.area_id, lsa.clone()).await;
                 continue;
             }
         }

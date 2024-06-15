@@ -3,7 +3,6 @@ mod state;
 pub use state::*;
 
 use crate::{
-    database::ProtocolDB,
     neighbor::{Neighbor, NeighborState},
     util::{do_nothing_handle, hex2ip},
 };
@@ -63,43 +62,42 @@ pub type AInterface = Arc<Mutex<Interface>>;
 pub type WInterface = Weak<Mutex<Interface>>;
 
 impl Interface {
-    pub async fn new(
+    pub fn new(
         area_id: Ipv4Addr,
         interface_name: String,
         sender: TransportSender,
         ip_addr: Ipv4Addr,
         ip_mask: Ipv4Addr,
     ) -> AInterface {
-        let this = Arc::new_cyclic(|me| Mutex::new(Self {
-            me: me.clone(),
-            interface_name,
-            sender,
-            net_type: NetType::Broadcast,
-            state: InterfaceState::Down,
-            ip_addr,
-            ip_mask,
-            area_id,
-            hello_interval: 10,
-            dead_interval: 40,
-            inf_trans_delay: 1,
-            router_priority: 1,
-            external_routing: true,
-            hello_timer: do_nothing_handle(),
-            wait_timer: do_nothing_handle(),
-            neighbors: HashMap::new(),
-            dr: hex2ip(0),
-            bdr: hex2ip(0),
-            cost: 0,
-            rxmt_interval: 4,
-            au_type: 0,
-            au_key: 0,
-        }));
-        ProtocolDB::get().insert_area(area_id).await;
-        listen::listen_interface(Arc::downgrade(&this));
-        this
+        Arc::new_cyclic(|me| {
+            Mutex::new(Self {
+                me: me.clone(),
+                interface_name,
+                sender,
+                net_type: NetType::Broadcast,
+                state: InterfaceState::Down,
+                ip_addr,
+                ip_mask,
+                area_id,
+                hello_interval: 10,
+                dead_interval: 40,
+                inf_trans_delay: 1,
+                router_priority: 1,
+                external_routing: true,
+                hello_timer: do_nothing_handle(),
+                wait_timer: do_nothing_handle(),
+                neighbors: HashMap::new(),
+                dr: hex2ip(0),
+                bdr: hex2ip(0),
+                cost: 0,
+                rxmt_interval: 4,
+                au_type: 0,
+                au_key: 0,
+            })
+        })
     }
 
-    pub async fn from(iface: &NetworkInterface, area_id: Ipv4Addr) -> AInterface {
+    pub fn from(iface: &NetworkInterface, area_id: Ipv4Addr) -> AInterface {
         let ip = iface
             .ips
             .iter()
@@ -118,7 +116,11 @@ impl Interface {
                 e
             ),
         };
-        Self::new(area_id, iface.name.to_string(), tx, ip.ip(), ip.mask()).await
+        Self::new(area_id, iface.name.to_string(), tx, ip.ip(), ip.mask())
+    }
+
+    pub fn start(this: &AInterface) {
+        listen::listen_interface(Arc::downgrade(this));
     }
 
     pub fn get_network_interface(&self) -> NetworkInterface {
@@ -133,8 +135,7 @@ impl Interface {
     }
 
     pub fn shrink_neighbors(&mut self) {
-        self.neighbors
-            .retain(|_, n| n.state != NeighborState::Down);
+        self.neighbors.retain(|_, n| n.state != NeighborState::Down);
     }
 
     pub fn reset(&mut self) {

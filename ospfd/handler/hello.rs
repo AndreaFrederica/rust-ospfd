@@ -31,7 +31,7 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: HelloPacket) {
     src.hello_receive().await;
     // 如果路由器自身出现在列表中，邻居状态机执行事件 2-WayReceived
     // 否则，邻居状态机执行事件 1-WayReceived，并终止包处理过程
-    if packet.neighbors.contains(&ProtocolDB::get().router_id) {
+    if packet.neighbors.contains(&ProtocolDB::get_router_id()) {
         src.two_way_received().await;
     } else {
         src.one_way_received().await;
