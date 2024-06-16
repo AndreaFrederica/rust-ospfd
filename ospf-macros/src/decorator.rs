@@ -20,6 +20,9 @@ fn get_field_tuples(s: &DataStruct) -> impl Iterator<Item = (&Ident, BitSize)> {
     fields.iter().map(|f| {
         let ident = f.ident.as_ref().unwrap();
         let ty = f.ty.to_token_stream().to_string();
+        if f.vis.to_token_stream().to_string() == "" {
+            panic!("All fields must be public")
+        }
         let attr = f
             .attrs
             .iter()
@@ -122,6 +125,22 @@ pub fn generate_from_buf(s: &DataStruct, name: &Ident) -> TokenStream {
                 let mut s = Self { #(#decls,)* };
                 #(#assigns)*
                 s
+            }
+        }
+    }
+}
+
+pub fn generate_default(s: &DataStruct, name: &Ident) -> TokenStream {
+    let fields = get_field_tuples(s).map(|(ident, size)| match size {
+        BitSize::Data(_) => quote! { #ident: 0 },
+        BitSize::Zero(_) => quote! { #ident: PhantomData },
+        BitSize::Vec(..) => quote! { #ident: Vec::new() },
+        BitSize::Ipv4 => quote! { #ident: Ipv4Addr::UNSPECIFIED },
+    });
+    quote! {
+        impl Default for #name {
+            fn default() -> Self {
+                Self { #(#fields,)* }
             }
         }
     }

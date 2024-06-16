@@ -30,10 +30,22 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn raw_packet(_attrs: TokenStream, code: TokenStream) -> TokenStream {
     let input = parse_macro_input!(code as DeriveInput);
+    let ast = input.clone();
     // enhancement: if input already has Clone and/or Debug, do not add them
-    let s = quote! {
+    let derived = quote! {
         #[derive(::ospf_macros::ToBytesMut, ::ospf_macros::FromBuf, Clone, Debug)]
         #input
+    };
+    let name = &ast.ident;
+    let s = match &ast.data {
+        syn::Data::Struct(ref s) => {
+            let g_default = decorator::generate_default(s, name);
+            quote! {
+                #derived
+                #g_default
+            }
+        }
+        _ => panic!("Only structs are supported"),
     };
     s.into()
 }

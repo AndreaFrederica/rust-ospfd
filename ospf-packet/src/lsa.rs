@@ -159,7 +159,11 @@ impl ToBytesMut for LsaData {
 
 #[raw_packet]
 pub struct RouterLSA {
-    pub flags: u16,
+    pub _z1: PhantomData<u5>,
+    pub v: u1,
+    pub e: u1,
+    pub b: u1,
+    pub _z2: PhantomData<u8>,
     pub num_links: u16,
     #[size(num_links)]
     pub links: Vec<RouterLSALink>,
@@ -174,7 +178,7 @@ pub struct NetworkLSA {
 #[raw_packet]
 pub struct SummaryLSA {
     pub network_mask: Ipv4Addr,
-    _zeros: PhantomData<u8>,
+    pub _zeros: PhantomData<u8>,
     pub metric: u24be,
     pub tos: u8,
     pub tos_metric: u24be,
@@ -184,7 +188,7 @@ pub struct SummaryLSA {
 pub struct AsExternalLSA {
     pub network_mask: Ipv4Addr,
     pub e: u1,
-    _zeros: PhantomData<u7>,
+    pub _zeros: PhantomData<u7>,
     pub metric: u24be,
     pub forwarding_address: Ipv4Addr,
     pub external_router_tag: u32,

@@ -197,7 +197,11 @@ mod test {
                     length: 48,
                 },
                 data: LsaData::Router(RouterLSA {
-                    flags: 0,
+                    _z1: PhantomData,
+                    _z2: PhantomData,
+                    v: 0,
+                    e: 0,
+                    b: 0,
                     num_links: 2,
                     links: vec![
                         RouterLSALink {
