@@ -70,7 +70,7 @@ async fn flooding_on(iface: &mut Interface, me: Ipv4Addr, src: Ipv4Addr, lsa: &L
     // （2）如果在上一步中，”没有”向连接状态重传列表加入任何 LSA，就不需要将 LSA 洪泛出接口。检查下一个接口。
     must!(success; ret: false);
     // （3/4）如果 LSA 是由该接口接收。
-    if iface.ip_addr == me {
+    if iface.ip_addr == me && iface.ip_addr != src {
         // （3）且是从 DR 或 BDR 接收到的，说明其他邻居都已经接收到该 LSA。检查下一个接口
         let neighbor = iface.neighbors.get(&src).unwrap();
         if neighbor.is_dr() || neighbor.is_bdr() {

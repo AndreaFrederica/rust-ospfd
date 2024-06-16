@@ -54,6 +54,10 @@ impl Lsa {
     pub fn update_checksum(&mut self) {
         self.header.ls_checksum = self.checksum();
     }
+
+    pub fn update_length(&mut self) {
+        self.header.length = self.to_bytes().len() as u16;
+    }
 }
 
 impl ToBytesMut for Lsa {
@@ -137,6 +141,7 @@ impl PartialEq for LsaHeader {
 }
 
 #[derive(Clone, Debug)]
+#[derive(PartialEq, Eq)]
 pub enum LsaData {
     Router(RouterLSA),
     Network(NetworkLSA),
@@ -158,6 +163,7 @@ impl ToBytesMut for LsaData {
 }
 
 #[raw_packet]
+#[derive(PartialEq, Eq)]
 pub struct RouterLSA {
     pub _z1: PhantomData<u5>,
     pub v: u1,
@@ -170,12 +176,14 @@ pub struct RouterLSA {
 }
 
 #[raw_packet]
+#[derive(PartialEq, Eq)]
 pub struct NetworkLSA {
     pub network_mask: Ipv4Addr,
     pub attached_routers: Vec<Ipv4Addr>,
 }
 
 #[raw_packet]
+#[derive(PartialEq, Eq)]
 pub struct SummaryLSA {
     pub network_mask: Ipv4Addr,
     pub _zeros: PhantomData<u8>,
@@ -185,6 +193,7 @@ pub struct SummaryLSA {
 }
 
 #[raw_packet]
+#[derive(PartialEq, Eq)]
 pub struct AsExternalLSA {
     pub network_mask: Ipv4Addr,
     pub e: u1,
@@ -194,7 +203,15 @@ pub struct AsExternalLSA {
     pub external_router_tag: u32,
 }
 
+pub mod link_types {
+    pub const P2P_LINK: u8 = 1;
+    pub const TRANSIT_LINK: u8 = 2;
+    pub const STUB_LINK: u8 = 3;
+    pub const VIRTUAL_LINK: u8 = 4;
+}
+
 #[raw_packet]
+#[derive(PartialEq, Eq)]
 pub struct RouterLSALink {
     pub link_id: Ipv4Addr,
     pub link_data: Ipv4Addr,

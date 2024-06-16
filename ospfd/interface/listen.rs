@@ -1,3 +1,5 @@
+use crate::{database::ProtocolDB, gen};
+
 use super::{InterfaceEvent, InterfaceState, WInterface};
 
 pub fn listen_interface(interface: WInterface) {
@@ -14,7 +16,9 @@ pub fn listen_interface(interface: WInterface) {
             } else {
                 interface.interface_up().await;
             }
-            drop(interface); // must release here, otherwise it will lock 8 secs...
+            //todo! temporary generate router lsa here
+            gen::router::gen_router_lsa(&mut ProtocolDB::upgrade_lock(interface).await).await;
+            // drop(interface); // must release here, otherwise it will lock 8 secs...
             // check interface every 8 seconds
             tokio::time::sleep(tokio::time::Duration::from_secs(8)).await;
         }
