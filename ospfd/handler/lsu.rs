@@ -11,7 +11,7 @@ use ospf_packet::{
 use crate::{
     constant::{AllDRouters, AllSPFRouters, LsaMaxAge, MaxSequenceNumber, MinLSArrival},
     database::{InterfacesGuard, ProtocolDB},
-    handler::flooding::flooding,
+    flooding::flooding,
     interface::InterfaceState,
     log_error, log_warning, must,
     neighbor::{NeighborEvent, NeighborState, RefNeighbor},
