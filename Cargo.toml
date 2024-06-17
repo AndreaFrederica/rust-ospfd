@@ -8,13 +8,14 @@ name = "ospfd"
 path = "ospfd/main.rs"
 
 [workspace]
-members = ["ospf-packet", "ospf-macros"]
+members = ["ospf-packet", "ospf-macros", "ospf-routing"]
 
 [dependencies]
 bytes = "1.6.*"                                     # convenient byte manipulation
 lazy_static = "1.4.*"                               # lazy static initialization
 ospf-packet = { path = "ospf-packet" }              # OSPF packet declaration & parsing
 ospf-macros = { path = "ospf-macros" }              # my proc macro
+ospf-routing = { path = "ospf-routing" }            # routing support written in C
 pnet = "0.35.*"                                     # raw socket
 thiserror = "1.0.*"                                 # error handling
 tokio = { version = "1.38.*", features = ["full"] } # async runtime
