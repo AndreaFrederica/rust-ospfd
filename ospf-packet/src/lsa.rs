@@ -118,7 +118,7 @@ impl Ord for LsaHeader {
             return std::cmp::Ordering::Greater;
         }
         if other.ls_age == constant::LsaMaxAge {
-            return std::cmp::Ordering::Greater;
+            return std::cmp::Ordering::Less;
         }
         // 如果两个实例 LS 时限的差异大于 MaxAgeDiff，较小时限（较近生成）的实例为较新
         if self.ls_age.abs_diff(other.ls_age) >= constant::MaxAgeDiff {
@@ -163,7 +163,7 @@ impl ToBytesMut for LsaData {
 }
 
 #[raw_packet]
-#[derive(PartialEq, Eq)]
+#[derive(Eq)]
 pub struct RouterLSA {
     pub _z1: PhantomData<u5>,
     pub v: u1,
@@ -175,11 +175,32 @@ pub struct RouterLSA {
     pub links: Vec<RouterLSALink>,
 }
 
+impl PartialEq for RouterLSA {
+    fn eq(&self, other: &Self) -> bool {
+        let mut self_links = self.links.clone();
+        let mut other_links = other.links.clone();
+        self_links.sort_unstable();
+        other_links.sort_unstable();
+        self.v == other.v && self.e == other.e && self.b == other.b
+            && self.num_links == other.num_links && self_links == other_links
+    }
+}
+
 #[raw_packet]
-#[derive(PartialEq, Eq)]
+#[derive(Eq)]
 pub struct NetworkLSA {
     pub network_mask: Ipv4Addr,
     pub attached_routers: Vec<Ipv4Addr>,
+}
+
+impl PartialEq for NetworkLSA {
+    fn eq(&self, other: &Self) -> bool {
+        let mut self_routers = self.attached_routers.clone();
+        let mut other_routers = other.attached_routers.clone();
+        self_routers.sort_unstable();
+        other_routers.sort_unstable();
+        self.network_mask == other.network_mask && self_routers == other_routers
+    }
 }
 
 #[raw_packet]
@@ -211,7 +232,7 @@ pub mod link_types {
 }
 
 #[raw_packet]
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RouterLSALink {
     pub link_id: Ipv4Addr,
     pub link_data: Ipv4Addr,

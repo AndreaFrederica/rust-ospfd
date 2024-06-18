@@ -66,6 +66,7 @@ impl Neighbor {
     }
 
     pub fn reset(&mut self) {
+        self.dd_seq_num = 0;
         self.dd_rxmt.reset();
         self.lsr_handle.abort();
         self.ls_retransmission_list.clear();

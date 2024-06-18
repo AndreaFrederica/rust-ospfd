@@ -97,8 +97,8 @@ impl CaptureOspfDaemon {
                             #[cfg(debug_assertions)]
                             log!(
                                 "interface({}) receives packet from {}: {} ({} bytes)",
-                                header.get_source(),
                                 header.get_destination(),
+                                header.get_source(),
                                 message_type_string(packet.get_message_type()),
                                 packet.get_length(),
                             );
