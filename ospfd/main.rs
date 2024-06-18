@@ -4,7 +4,7 @@ mod constant;
 mod daemon;
 mod database;
 mod flooding;
-mod gen;
+mod gen_lsa;
 mod handler;
 mod interface;
 mod logging;
