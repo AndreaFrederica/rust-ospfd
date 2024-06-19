@@ -1,6 +1,6 @@
 mod routing;
 mod vlink;
-pub use routing::RoutingTable;
+pub use routing::*;
 pub use vlink::VirtualLink;
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::OnceLock, time::Instant};
@@ -89,6 +89,10 @@ impl ProtocolDB {
         if !self.areas.contains_key(&area_id) {
             self.areas.insert(area_id, Area::new(area_id));
         }
+    }
+
+    pub async fn recalc_routing(&mut self) {
+        self.routing_table.recalculate(self.areas.values_mut().collect()).await;
     }
 }
 

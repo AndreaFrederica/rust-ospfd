@@ -27,7 +27,11 @@ async fn main() {
     }
     ProtocolDB::init(&interfaces);
     interfaces.iter().for_each(|i| Interface::start(i));
-    loop {}
+
+    loop {
+        log_success!("{}", ProtocolDB::get().await.routing_table);
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    }
 }
 
 fn start(iface: &NetworkInterface) -> Option<AInterface> {

@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 
 use lsa::LsaTimer;
 
-use crate::{constant::LsaMaxAge, database::ProtocolDB, guard};
+use crate::{constant::LsaMaxAge, database::{ProtocolDB, RoutingTableItem}, guard};
 
 /// (lsa, created_at, updated_at)
 type LsaDB = HashMap<LsaIndex, (Lsa, LsaTimer, Instant)>;
@@ -32,7 +32,7 @@ pub struct Area {
     /// ［地址、掩码］-> 宣告状态
     pub addr_range: BTreeMap<(Ipv4Addr, Ipv4Addr), bool>,
     lsa_database: LsaDB,
-    pub short_path_tree: ShortPathTree,
+    short_path_tree: ShortPathTree,
     pub transit_capability: bool,
     pub external_routing_capability: bool,
     pub stub_default_cost: u32,
@@ -144,6 +144,14 @@ impl Area {
         let external = db.as_mut().and_then(|db| db.get_mut(&key));
         guard!(Some(db) = self.lsa_database.get_mut(&key).or(external));
         db.2 = Instant::now();
+    }
+
+    pub async fn recalc_routing(&mut self) {
+        self.short_path_tree = ShortPathTree::calculate(self).await;
+    }
+
+    pub fn get_routing(&self) -> Vec<RoutingTableItem> {
+        ShortPathTree::get_routing(self)
     }
 }
 

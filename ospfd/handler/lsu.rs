@@ -13,7 +13,7 @@ use crate::{
     database::{InterfacesGuard, ProtocolDB},
     flooding::flooding,
     interface::InterfaceState,
-    log_error, log_warning, must,
+    log_error, must,
     neighbor::{NeighborEvent, NeighborState, RefNeighbor},
     sender::send_packet,
 };
@@ -131,7 +131,7 @@ async fn handle_one(
         }
         // d) 将新的 LSA 加入连接状态数据库（取代当前数据库的副本），这可能导致按调度计算路由表
         invoke!(meta.insert_lsa, lsa.clone());
-        log_warning!("todo: recalculate routing table");
+        ProtocolDB::get().await.recalc_routing().await;
         // e）也许需要从接收接口发送 LSAck 包以确认所收到的 LSA。这在第 13.5 节说明。
         if !flood {
             if meta.0.me.state != InterfaceState::Backup || neighbor!(meta).is_dr() {
