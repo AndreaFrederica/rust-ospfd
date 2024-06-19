@@ -66,13 +66,13 @@ macro_rules! guard {
         let $x = $y else {
             $($op;)?
             continue;
-        }
+        };
     };
     ($x:pat = $y:expr $(;else:$op:expr)?; break $($val:expr)? $(;)?) => {
         let $x = $y else {
             $($op;)?
             break $($val)?;
-        }
+        };
     };
     ($x:pat = $y:expr; dbg: $($arg:tt)*) => {
         let $x = $y else {

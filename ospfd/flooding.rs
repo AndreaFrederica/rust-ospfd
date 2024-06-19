@@ -26,11 +26,12 @@ pub async fn flooding(interfaces: &mut InterfacesGuard, src_ip: Ipv4Addr, lsa: &
     });
     // 逐个接口处理
     let rt = tokio::runtime::Handle::current();
-    tokio::task::block_in_place(|| {
+    let result: Vec<_> = tokio::task::block_in_place(|| {
         ac_iface
             .map(|mut i| rt.block_on(flooding_on(&mut i, me, src_ip, lsa)))
-            .any(|r| r)
-    })
+            .collect()
+    });
+    result.into_iter().any(|b| b)
 }
 
 async fn flooding_on(iface: &mut Interface, me: Ipv4Addr, src: Ipv4Addr, lsa: &Lsa) -> bool {

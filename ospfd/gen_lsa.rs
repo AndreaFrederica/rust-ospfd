@@ -73,9 +73,10 @@ pub async fn gen_network_lsa(interfaces: &mut InterfacesGuard) {
             .values()
             .filter(|n| n.state == NeighborState::Full)
             .map(|n| n.router_id)
+            .chain(std::iter::once(ProtocolDB::get_router_id()))
             .collect(),
     };
-    must!(lsa.attached_routers.len() > 0);
+    must!(lsa.attached_routers.len() > 1);
     let router_id = ProtocolDB::get_router_id();
     let ls_id = interfaces.me.ip_addr;
     gen_lsa_impl(interfaces, NETWORK_LSA, ls_id, router_id, lsa).await;
@@ -128,4 +129,5 @@ async fn gen_lsa_impl<T>(
         .insert_lsa(interfaces.me.area_id, lsa.clone())
         .await;
     flooding(interfaces, interfaces.me.ip_addr, &lsa).await;
+    ProtocolDB::get().await.recalc_routing().await;
 }

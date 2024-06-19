@@ -60,7 +60,7 @@ impl std::fmt::Display for RoutingItem {
         write!(
             f,
             "{}/{}, nexthop: {}, ifname: {}",
-            self.dest, self.mask, self.nexthop, self.ifname
+            self.dest, u32::from(self.mask).count_ones(), self.nexthop, self.ifname
         )
     }
 }
@@ -97,9 +97,8 @@ pub fn get_route_table() -> Result<Vec<RoutingItem>, io::Error> {
         Err(io::Error::last_os_error())
     } else {
         Ok(arr[..size as usize]
-            .to_vec()
-            .into_iter()
-            .map(|it| it.into())
+            .iter()
+            .map(|it| (*it).into())
             .collect())
     }
 }
