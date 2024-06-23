@@ -30,7 +30,6 @@ int add_route(const routing_item_t *_r)
     addr->sin_addr.s_addr = _r->mask;
 
     route.rt_flags = RTF_UP | RTF_GATEWAY;
-    route.rt_dev = (char *)_r->ifname;
 
     int ret = ioctl(fd, SIOCADDRT, &route);
     close(fd);
@@ -54,9 +53,6 @@ int delete_route(const routing_item_t *_r)
     addr->sin_family = AF_INET;
     addr->sin_addr.s_addr = _r->mask;
 
-    route.rt_flags = RTF_UP | RTF_GATEWAY;
-    route.rt_dev = (char *)_r->ifname;
- 
     int ret = ioctl(fd, SIOCDELRT, &route);
     close(fd);
     return ret;
@@ -82,8 +78,8 @@ int get_route_table(routing_item_t *_arr, int _size)
 
     while (sz < _size)
     {
-        r = fscanf(fp, "%15s%x%x%x%*d%*d%*d%x%*d%*d%*d\n",
-                   _arr->ifname, &_arr->dest, &_arr->nexthop, &f, &_arr->mask);
+        r = fscanf(fp, "%*s%x%x%x%*d%*d%*d%x%*d%*d%*d\n",
+                   &_arr->dest, &_arr->nexthop, &f, &_arr->mask);
         if ((r < 0) && feof(fp))
         /* EOF with no (nonspace) chars read. */
             break;

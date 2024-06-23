@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr},
-};
+use std::{collections::HashMap, net::Ipv4Addr};
 
 use ospf_packet::lsa::LsaIndex;
-use ospf_routing::{add_route, RoutingItem};
-use pnet::datalink;
+use ospf_routing::{add_route as lib_add_route, delete_route, RoutingItem};
 
-use crate::{area::Area, guard, log, log_warning, util::ip2hex};
+use crate::{area::Area, log, log_warning, util::ip2hex};
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
@@ -22,6 +18,7 @@ impl RoutingTable {
     }
 
     pub async fn recalculate(&mut self, areas: Vec<&mut Area>) {
+        let old_table = std::mem::take(&mut self.table);
         for area in areas {
             area.recalc_routing().await;
             area.get_routing().into_iter().for_each(|item| {
@@ -30,10 +27,32 @@ impl RoutingTable {
             });
         }
         log_warning!("todo! calculate external routing");
-        self.table.values().for_each(|item|{
-            let item: RoutingItem = item.try_into().unwrap();
-            log!("add route: {:?}", add_route(&item));
+        old_table.iter().for_each(|(k, old)| {
+            let old = RoutingItem::from(old);
+            let new = self.table.get(k);
+            if !new.is_some_and(|new| old == new.into()) {
+                log!("delete route: {:?}", delete_route(old));
+            }
         });
+        self.table.iter().for_each(|(k, new)| {
+            let new = RoutingItem::from(new);
+            if !old_table.get(k).is_some_and(|old| new == old.into()) {
+                log!("add route: {:?}", add_route(new));
+            }
+        });
+    }
+}
+
+/// insert a route into the routing table
+/// if the route already exists, delete it first
+fn add_route(r: RoutingItem) -> Result<(), std::io::Error> {
+    use std::io::ErrorKind::AlreadyExists;
+    match lib_add_route(r) {
+        Err(e) if e.kind() == AlreadyExists => {
+            delete_route(r)?;
+            lib_add_route(r)
+        }
+        any => any,
     }
 }
 
@@ -100,32 +119,12 @@ pub struct RoutingTableItem {
     pub ad_router: Ipv4Addr,
 }
 
-impl TryFrom<&RoutingTableItem> for RoutingItem {
-    type Error = std::io::Error;
-    fn try_from(value: &RoutingTableItem) -> Result<Self, Self::Error> {
-        let iface = datalink::interfaces().into_iter().find_map(|iface| {
-            iface
-                .ips
-                .iter()
-                .find(|ip| {
-                    guard!(IpAddr::V4(mask) = ip.mask(); ret: false);
-                    guard!(IpAddr::V4(ip) = ip.ip(); ret: false);
-                    ip & mask == value.next_hop & mask
-                })
-                .map(|_| iface.name.clone())
-        });
-        if let Some(iface) = iface {
-            Ok(Self {
-                dest: value.dest_id,
-                mask: value.addr_mask,
-                nexthop: value.next_hop,
-                ifname: iface,
-            })
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no interface found",
-            ))
+impl From<&RoutingTableItem> for RoutingItem {
+    fn from(value: &RoutingTableItem) -> Self {
+        Self {
+            dest: value.dest_id,
+            mask: value.addr_mask,
+            nexthop: value.next_hop,
         }
     }
 }

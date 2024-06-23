@@ -10,7 +10,6 @@ typedef struct routing_item_t
     in_addr_t dest;
     in_addr_t mask;
     in_addr_t nexthop;
-    char ifname[IF_NAMESIZE];
 } routing_item_t;
 
 /// @brief 添加路由表

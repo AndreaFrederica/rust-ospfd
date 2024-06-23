@@ -1,4 +1,4 @@
-use std::{ffi::CStr, io, net::Ipv4Addr};
+use std::{io, net::Ipv4Addr};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -7,15 +7,13 @@ struct routing_item_t {
     pub dest: libc::in_addr_t,
     pub mask: libc::in_addr_t,
     pub nexthop: libc::in_addr_t,
-    pub ifname: [libc::c_char; 16],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RoutingItem {
     pub dest: Ipv4Addr,
     pub mask: Ipv4Addr,
     pub nexthop: Ipv4Addr,
-    pub ifname: String,
 }
 
 impl From<routing_item_t> for RoutingItem {
@@ -24,33 +22,16 @@ impl From<routing_item_t> for RoutingItem {
             dest: value.dest.to_be().into(),
             mask: value.mask.to_be().into(),
             nexthop: value.nexthop.to_be().into(),
-            ifname: unsafe {
-                CStr::from_ptr(value.ifname.as_ptr())
-                    .to_str()
-                    .unwrap()
-                    .into()
-            },
         }
     }
 }
 
-impl From<&RoutingItem> for routing_item_t {
-    fn from(value: &RoutingItem) -> Self {
+impl From<RoutingItem> for routing_item_t {
+    fn from(value: RoutingItem) -> Self {
         Self {
             dest: u32::from(value.dest).to_be(),
             mask: u32::from(value.mask).to_be(),
             nexthop: u32::from(value.nexthop).to_be(),
-            ifname: {
-                let mut arr = [0; 16];
-                let ifname = unsafe {
-                    std::slice::from_raw_parts(
-                        value.ifname.as_ptr() as *const i8,
-                        value.ifname.len(),
-                    )
-                };
-                arr[..ifname.len()].copy_from_slice(ifname);
-                arr
-            },
         }
     }
 }
@@ -59,8 +40,8 @@ impl std::fmt::Display for RoutingItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/{}, nexthop: {}, ifname: {}",
-            self.dest, u32::from(self.mask).count_ones(), self.nexthop, self.ifname
+            "{}/{}, nexthop: {}",
+            self.dest, u32::from(self.mask).count_ones(), self.nexthop
         )
     }
 }
@@ -74,7 +55,7 @@ mod raw {
     }
 }
 
-pub fn add_route(r: &RoutingItem) -> Result<(), io::Error> {
+pub fn add_route(r: RoutingItem) -> Result<(), io::Error> {
     if unsafe { raw::add_route(&r.into()) } < 0 {
         Err(io::Error::last_os_error())
     } else {
@@ -82,7 +63,7 @@ pub fn add_route(r: &RoutingItem) -> Result<(), io::Error> {
     }
 }
 
-pub fn delete_route(r: &RoutingItem) -> Result<(), io::Error> {
+pub fn delete_route(r: RoutingItem) -> Result<(), io::Error> {
     if unsafe { raw::delete_route(&r.into()) } < 0 {
         Err(io::Error::last_os_error())
     } else {
@@ -117,12 +98,11 @@ mod test {
             dest: Ipv4Addr::new(10, 10, 1, 0),
             mask: Ipv4Addr::new(255, 255, 255, 0),
             nexthop: gateway.nexthop.into(),
-            ifname: "eth0".into(),
         };
-        add_route(&item).unwrap();
+        add_route(item).unwrap();
         let items = get_route_table().unwrap();
         assert!(items.contains(&item));
-        delete_route(&item).unwrap();
+        delete_route(item).unwrap();
         let items = get_route_table().unwrap();
         assert!(!items.contains(&item));
     }

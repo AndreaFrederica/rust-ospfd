@@ -12,6 +12,8 @@ mod neighbor;
 mod sender;
 mod util;
 
+use std::net::Ipv4Addr;
+
 use constant::BackboneArea;
 use daemon::Daemon;
 use database::ProtocolDB;
@@ -35,10 +37,13 @@ async fn main() {
 }
 
 fn start(iface: &NetworkInterface) -> Option<AInterface> {
+    if iface.ips.iter().find(|i| i.ip() == Ipv4Addr::LOCALHOST).is_some() {
+        return None;
+    }
     if iface.ips.iter().find(|i| i.is_ipv4()).is_none() {
         log_warning!("The interface {} do NOT have an ipv4 address", iface.name);
         return None;
-    };
+    }
     let interface = interface::Interface::from(&iface, BackboneArea);
     let ospf_handler = handler::ospf_handler_maker(interface.clone());
     let capture_daemon = capture::CaptureOspfDaemon::new(&iface, ospf_handler).unwrap();
