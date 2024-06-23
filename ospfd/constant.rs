@@ -2,7 +2,7 @@
 
 use std::net::Ipv4Addr;
 
-pub const LsRefreshTime: u32 = 1800;
+pub const LsRefreshTime: u16 = 1800;
 pub const MinLSInterval: u32 = 5;
 pub const MinLSArrival: u32 = 1;
 pub const LsaMaxAge: u16 = 3600;

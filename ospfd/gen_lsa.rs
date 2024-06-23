@@ -30,16 +30,7 @@ pub async fn gen_router_lsa(interfaces: &mut InterfacesGuard) {
             log_warning!("todo: loopback interface");
         } else {
             assert!(matches!(iface.net_type, NetType::Broadcast | NetType::NBMA));
-            // 如果接口状态为 Waiting，加入类型 3 连接（存根网络）。
-            if iface.state == InterfaceState::Waiting {
-                lsa.links.push(RouterLSALink {
-                    link_id: iface.ip_addr,
-                    link_data: iface.ip_mask,
-                    link_type: STUB_LINK,
-                    tos: 0,
-                    metric: 0,
-                });
-            } else if iface.is_dr() && !iface.neighbors.is_empty()
+            if iface.is_dr() && !iface.neighbors.is_empty()
             // 如果路由器与 DR 完全邻接
             // 或路由器自身为 DR 且与至少一台其他路由器邻接
             // 加入类型 2 连接（传输网络）
@@ -53,7 +44,16 @@ pub async fn gen_router_lsa(interfaces: &mut InterfacesGuard) {
                     link_data: iface.ip_addr,
                     link_type: TRANSIT_LINK,
                     tos: 0,
-                    metric: 1,
+                    metric: iface.cost,
+                });
+            } else {
+            // 否则，加入类型 3 连接（存根网络）
+                lsa.links.push(RouterLSALink {
+                    link_id: iface.ip_addr,
+                    link_data: iface.ip_mask,
+                    link_type: STUB_LINK,
+                    tos: 0,
+                    metric: iface.cost,
                 });
             }
         }
@@ -118,8 +118,8 @@ async fn gen_lsa_impl<T>(
     lsa.update_length();
     lsa.update_checksum();
     // todo! temporary ignore identical lsa
-    if let Some((old, created, _)) = old {
-        if created.elapsed().as_secs() < LsRefreshTime.into() && old.data == lsa.data {
+    if let Some((old, ..)) = old {
+        if old.header.ls_age < LsRefreshTime && old.data == lsa.data {
             // identical
             return;
         }

@@ -89,7 +89,7 @@ impl Interface {
                 neighbors: HashMap::new(),
                 dr: hex2ip(0),
                 bdr: hex2ip(0),
-                cost: 0,
+                cost: 1,
                 rxmt_interval: 4,
                 au_type: 0,
                 au_key: 0,

@@ -209,8 +209,6 @@ pub struct SummaryLSA {
     pub network_mask: Ipv4Addr,
     pub _zeros: PhantomData<u8>,
     pub metric: u24be,
-    pub tos: u8,
-    pub tos_metric: u24be,
 }
 
 #[raw_packet]
