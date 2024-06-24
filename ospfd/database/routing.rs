@@ -74,7 +74,7 @@ impl std::fmt::Display for Ipv4AddrMask {
 impl Ipv4AddrMask {
     pub fn from(addr: Ipv4Addr, mask: Ipv4Addr) -> Self {
         let addr = addr & mask;
-        Ipv4AddrMask(addr, ip2hex(mask).count_ones() as u8)
+        Ipv4AddrMask(addr, ip2hex(mask).leading_ones() as u8)
     }
 
     pub fn mask(&self) -> Ipv4Addr {

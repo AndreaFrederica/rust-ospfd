@@ -41,7 +41,7 @@ impl std::fmt::Display for RoutingItem {
         write!(
             f,
             "{}/{}, nexthop: {}",
-            self.dest, u32::from(self.mask).count_ones(), self.nexthop
+            self.dest, u32::from(self.mask).leading_ones(), self.nexthop
         )
     }
 }
