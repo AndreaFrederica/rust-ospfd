@@ -9,8 +9,60 @@ pub const fn hex2ip(hex: u32) -> Ipv4Addr {
     Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])
 }
 
-pub fn do_nothing_handle() -> tokio::task::AbortHandle {
-    tokio::spawn(async {}).abort_handle()
+#[derive(Debug, Default)]
+pub struct AbortHandle(Option<tokio::task::AbortHandle>);
+
+impl AbortHandle {
+    pub fn abort(&self) {
+        if let Some(ref handle) = self.0 {
+            handle.abort();
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        if let Some(ref handle) = self.0 {
+            handle.is_finished()
+        } else {
+            true
+        }
+    }
+}
+
+impl Drop for AbortHandle {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
+impl TryFrom<AbortHandle> for tokio::task::AbortHandle {
+    type Error = &'static str;
+    fn try_from(mut handle: AbortHandle) -> Result<Self, Self::Error> {
+        if let Some(handle) = handle.0.take() {
+            Ok(handle)
+        } else {
+            Err("AbortHandle is empty")
+        }
+    }
+}
+
+impl From<tokio::task::AbortHandle> for AbortHandle {
+    fn from(handle: tokio::task::AbortHandle) -> Self {
+        Self(Some(handle))
+    }
+}
+
+impl<T> From<&tokio::task::JoinHandle<T>> for AbortHandle {
+    fn from(handle: &tokio::task::JoinHandle<T>) -> Self {
+        Self(Some(handle.abort_handle()))
+    }
+}
+
+impl<T> From<tokio::task::JoinHandle<T>> for AbortHandle {
+    fn from(handle: tokio::task::JoinHandle<T>) -> Self {
+        Self(Some(handle.abort_handle()))
+    }
 }
 
 #[macro_export]

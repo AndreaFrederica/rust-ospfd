@@ -4,7 +4,7 @@ use ospf_packet::packet::{DBDescription, LSRequest};
 
 use crate::{
     guard, interface::Interface, must, neighbor::NeighborEvent, sender::send_packet,
-    util::do_nothing_handle,
+    util::AbortHandle,
 };
 
 use super::Neighbor;
@@ -75,7 +75,7 @@ impl<'a> RefNeighbor<'a> {
                         tokio::time::sleep(interval).await;
                     }
                 });
-                neighbor.lsr_handle.child = rxmt.abort_handle();
+                neighbor.lsr_handle.child = (&rxmt).into();
                 // yield to release the lock
                 drop(iface);
                 let _ = rxmt.await;
@@ -106,19 +106,10 @@ impl<'a> RefNeighbor<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LsrHandle {
-    master: tokio::task::AbortHandle,
-    child: tokio::task::AbortHandle,
-}
-
-impl Default for LsrHandle {
-    fn default() -> Self {
-        Self {
-            master: do_nothing_handle(),
-            child: do_nothing_handle(),
-        }
-    }
+    master: AbortHandle,
+    child: AbortHandle,
 }
 
 impl LsrHandle {
@@ -127,7 +118,7 @@ impl LsrHandle {
         F: Future<Output = ()> + Send + 'static,
     {
         self.abort();
-        self.master = tokio::spawn(f).abort_handle();
+        self.master = tokio::spawn(f).into();
     }
 
     pub fn abort(&self) {

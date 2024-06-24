@@ -238,7 +238,7 @@ async fn reset_timer(this: &mut RefNeighbor<'_>) {
             .inactivity_timer()
             .await;
     })
-    .abort_handle();
+    .into();
 }
 
 async fn judge_connect(this: &mut RefNeighbor<'_>) -> bool {

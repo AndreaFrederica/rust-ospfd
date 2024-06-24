@@ -4,7 +4,7 @@ pub use state::*;
 
 use crate::{
     neighbor::{Neighbor, NeighborState},
-    util::{do_nothing_handle, hex2ip},
+    util::{AbortHandle, hex2ip},
 };
 
 use std::{
@@ -37,8 +37,8 @@ pub struct Interface {
     pub inf_trans_delay: u16,
     pub router_priority: u8,
     pub external_routing: bool,
-    pub hello_timer: tokio::task::AbortHandle,
-    pub wait_timer: tokio::task::AbortHandle,
+    pub hello_timer: AbortHandle,
+    pub wait_timer: AbortHandle,
     #[doc = "ip -> neighbor (p2p|virtual => ip := router_id)"]
     pub neighbors: HashMap<Ipv4Addr, Neighbor>,
     pub dr: Ipv4Addr,
@@ -84,8 +84,8 @@ impl Interface {
                 inf_trans_delay: 1,
                 router_priority: 1,
                 external_routing: true,
-                hello_timer: do_nothing_handle(),
-                wait_timer: do_nothing_handle(),
+                hello_timer: AbortHandle::default(),
+                wait_timer: AbortHandle::default(),
                 neighbors: HashMap::new(),
                 dr: hex2ip(0),
                 bdr: hex2ip(0),

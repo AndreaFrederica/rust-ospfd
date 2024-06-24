@@ -93,7 +93,7 @@ impl InterfaceEvent for Interface {
                 guard!(Some(iface) = weak.upgrade());
                 iface.lock().await.wait_timer().await;
             })
-            .abort_handle();
+            .into();
             InterfaceState::Waiting
         };
         set_hello_timer(self);
@@ -167,7 +167,7 @@ fn set_hello_timer(interface: &mut Interface) {
         }
         crate::log_warning!("interface is dropped, hello timer stopped");
     })
-    .abort_handle();
+    .into();
 }
 
 async fn send_hello(interface: &mut Interface) {
