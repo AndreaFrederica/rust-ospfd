@@ -13,7 +13,7 @@ use ospf_packet::{lsa::LsaHeader, packet::DBDescription};
 
 use crate::{
     database::LsaIndex,
-    util::{AbortHandle, hex2ip},
+    util::{hex2ip, AbortHandle},
 };
 
 #[derive(Debug)]

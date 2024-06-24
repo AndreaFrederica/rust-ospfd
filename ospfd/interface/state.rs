@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use ospf_packet::packet::{self, options::OptionExt};
+use ospf_packet::packet::{self, options::OptionExt, LSUpdate};
 use tokio::time::sleep;
 
 use super::{Interface, NetType};
@@ -166,6 +166,42 @@ fn set_hello_timer(interface: &mut Interface) {
             sleep(Duration::from_secs(hello_interval)).await;
         }
         crate::log_warning!("interface is dropped, hello timer stopped");
+    })
+    .into();
+    let weak = interface.me.clone();
+    interface.retransmission_timer = tokio::spawn(async move {
+        while let Some(interface) = weak.upgrade() {
+            let mut interface = interface.lock().await;
+            let area_id = interface.area_id;
+            let hello_interval = interface.rxmt_interval as u64;
+            let rt = tokio::runtime::Handle::current();
+            let packets: Vec<_> = tokio::task::block_in_place(|| {
+                interface
+                    .neighbors
+                    .values()
+                    .filter_map(|n| {
+                        must!(n.state >= NeighborState::Exchange; ret: None);
+                        let lsa: Vec<_> = n
+                            .ls_retransmission_list
+                            .iter()
+                            .filter_map(|&key| {
+                                rt.block_on(rt.block_on(ProtocolDB::get()).get_lsa(area_id, key))
+                                    .map(|(lsa, ..)| lsa)
+                            })
+                            .collect();
+                        let num_lsa = lsa.len() as u32;
+                        Some((LSUpdate { num_lsa, lsa }, n.ip_addr))
+                    })
+                    .collect()
+            });
+            for packet in packets {
+                must!(packet.0.num_lsa > 0; continue);
+                send_packet(&mut interface, &packet.0, packet.1).await;
+            }
+            drop(interface); // drop here to avoid sleep with a lock...
+            sleep(Duration::from_secs(hello_interval)).await;
+        }
+        crate::log_warning!("interface is dropped, retransmission timer stopped");
     })
     .into();
 }

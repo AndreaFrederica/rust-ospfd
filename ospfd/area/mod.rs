@@ -16,7 +16,11 @@ use tokio::sync::Mutex;
 
 use lsa::LsaTimer;
 
-use crate::{constant::LsaMaxAge, database::{ProtocolDB, RoutingTableItem}, guard};
+use crate::{
+    constant::LsaMaxAge,
+    database::{ProtocolDB, RoutingTableItem},
+    guard, must,
+};
 
 /// (lsa, created_at, updated_at)
 type LsaDB = HashMap<LsaIndex, (Lsa, LsaTimer, Instant)>;
@@ -128,7 +132,7 @@ impl Area {
     }
 
     pub async fn insert_lsa(&mut self, value: Lsa) {
-        assert!(self.need_update(value.header).await);
+        must!(self.need_update(value.header).await);
         let mut db = STATIC_DB.lock().await;
         self.m_insert_lsa(&mut db, value.header.into(), value);
     }
