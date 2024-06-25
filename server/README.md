@@ -3,7 +3,7 @@
 GNS3 服务器安装指南见官网。我使用的是 Hyper-V 虚拟机，不过使用 vmware 或其他方式也是可以的。
 
 服务器启动后，将本文件下的 `Dockerfile` 和 `sync.sh` scp 上传到 GNS3 服务器上。
-运行 `docker build -t <name:tag>` 构建镜像，然后在 GNS3 上添加这个镜像模板。（具体见官网）
+运行 `docker build . -t <name:tag>` 构建镜像，然后在 GNS3 上添加这个镜像模板。（具体见官网）
 
 Docker 虚拟机模板配置方式也可以从官网找到（设置网络设备，ip等等，可以用 ping 测试连通性）。
 
