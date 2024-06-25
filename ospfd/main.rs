@@ -1,5 +1,6 @@
 mod area;
 mod capture;
+mod command;
 mod constant;
 mod daemon;
 mod database;
@@ -12,7 +13,7 @@ mod neighbor;
 mod sender;
 mod util;
 
-use std::net::Ipv4Addr;
+use std::{io::Write, net::Ipv4Addr, time::Duration};
 
 use constant::BackboneArea;
 use daemon::Daemon;
@@ -30,9 +31,17 @@ async fn main() {
     ProtocolDB::init(&interfaces);
     interfaces.iter().for_each(|i| Interface::start(i));
 
+    log!("waiting to start...");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    command::RUNTIME.get_or_init(tokio::runtime::Handle::current);
     loop {
-        log_success!("{}", ProtocolDB::get().await.routing_table);
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        print!("ospfd> ");
+        std::io::stdout().flush().unwrap();
+        let mut cmd = Default::default();
+        match std::io::stdin().read_line(&mut cmd) {
+            Ok(_) => tokio::task::block_in_place(|| command::parse_cmd(cmd)),
+            Err(e) => log_error!("Error while reading cmd: {}", e),
+        }
     }
 }
 

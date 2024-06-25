@@ -63,13 +63,21 @@ impl ProtocolDB {
 
     /// # Safety
     /// This function should be awaited when caller hasn't have any locks.
-    fn get_interfaces_impl() -> Vec<Guard<Interface>> {
+    pub fn get_interfaces_impl() -> Vec<Guard<Interface>> {
         INTERFACES
             .get()
             .unwrap()
             .iter()
             .map(|iface| iface.blocking_lock())
             .collect()
+    }
+
+    /// # Safety
+    /// This function should be awaited when caller hasn't have any locks.
+    pub fn get_interface_by_name(name: &str) -> Option<Guard<Interface>> {
+        Self::get_interfaces_impl()
+            .into_iter()
+            .find(|iface| iface.interface_name == name)
     }
 
     pub async fn upgrade_lock(iface: MutexGuard<'_, Interface>) -> InterfacesGuard {

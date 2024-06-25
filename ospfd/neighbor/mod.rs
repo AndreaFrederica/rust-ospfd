@@ -175,3 +175,12 @@ impl NeighborSubStruct {
         self.ip_addr == self.bdr
     }
 }
+
+impl std::fmt::Display for Neighbor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Router ID: {}\t\tAddress: {}", self.router_id, self.ip_addr)?;
+        writeln!(f, "  State: {:?}\tMode: {}\tPriority: {}", self.state, if self.master { "master" } else { "slave" }, self.priority)?;
+        writeln!(f, "  DR: {}\t\tBDR: {}", self.dr, self.bdr)?;
+        Ok(())
+    }
+}

@@ -130,6 +130,14 @@ impl Area {
         }
     }
 
+    pub fn get_all_area_lsa(&self) -> Vec<LsaHeader> {
+        self.lsa_database
+            .values()
+            .map(|(lsa, timer, _)| timer.update_lsa_age_header(lsa.header.clone()))
+            .filter(|header| header.ls_age != LsaMaxAge)
+            .collect()
+    }
+
     pub async fn need_update(&self, header: LsaHeader) -> bool {
         let key = header.into();
         let db = STATIC_DB.lock().await;

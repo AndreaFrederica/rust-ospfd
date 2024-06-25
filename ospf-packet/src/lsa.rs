@@ -12,6 +12,17 @@ pub mod types {
     pub const SUMMARY_IP_LSA: u8 = 3;
     pub const SUMMARY_ASBR_LSA: u8 = 4;
     pub const AS_EXTERNAL_LSA: u8 = 5;
+
+    pub fn to_string(ls_type: u8) -> &'static str {
+        match ls_type {
+            ROUTER_LSA => "Router",
+            NETWORK_LSA => "Network",
+            SUMMARY_IP_LSA => "Sum-Net",
+            SUMMARY_ASBR_LSA => "Sum-ASBR",
+            AS_EXTERNAL_LSA => "External",
+            _ => "Unknown",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

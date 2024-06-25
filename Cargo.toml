@@ -20,3 +20,4 @@ pnet = "0.35.*"                                     # raw socket
 thiserror = "1.0.*"                                 # error handling
 tokio = { version = "1.38.*", features = ["full"] } # async runtime
 libc = "0.2.*"                                      # raw C support
+trie-rs = "0.4.*"                                   # trie (for command parsing)

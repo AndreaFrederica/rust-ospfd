@@ -4,11 +4,7 @@ use ospf_packet::lsa::LsaIndex;
 use ospf_routing::{add_route as lib_add_route, delete_route as lib_delete_route, RoutingItem};
 
 use crate::{
-    area::Area,
-    constant::{BackboneArea, LSInfinity},
-    database::ProtocolDB,
-    guard, log, must,
-    util::ip2hex,
+    area::Area, constant::{BackboneArea, LSInfinity}, database::ProtocolDB, guard, log_success, must, util::ip2hex
 };
 
 #[derive(Debug, Clone)]
@@ -89,14 +85,14 @@ impl RoutingTable {
             guard!(Ok(old) = RoutingItem::try_from(old));
             let new = self.table.get(k);
             if !new.is_some_and(|new| new.try_into().is_ok_and(|new| old == new)) {
-                log!("delete route: {:?}", delete_route(old));
+                log_success!("delete route: {:?}", delete_route(old));
             }
         });
         self.table.iter().for_each(|(k, new)| {
             guard!(Ok(new) = RoutingItem::try_from(new));
             let old = old_table.get(k);
             if !old.is_some_and(|old| old.try_into().is_ok_and(|old| new == old)) {
-                log!("add route: {:?}", add_route(new));
+                log_success!("add route: {:?}", add_route(new));
             }
         });
     }
@@ -106,6 +102,13 @@ impl RoutingTable {
             let addr = Ipv4AddrMask(ip, mask);
             self.table.get(&RoutingTableIndex::Network(addr))
         })
+    }
+
+    pub fn delete_all_routing(&self) {
+        for item in self.table.values() {
+            guard!(Ok(r) = RoutingItem::try_from(item); continue);
+            log_success!("delete route: {:?}", delete_route(r));
+        }
     }
 }
 
@@ -124,6 +127,7 @@ fn add_route(r: RoutingItem) -> Result<(), std::io::Error> {
 }
 
 fn delete_route(r: RoutingItem) -> Result<(), std::io::Error> {
+    must!(r.nexthop != Ipv4Addr::UNSPECIFIED; ret: Ok(()));
     match lib_delete_route(r) {
         // route not exists
         Err(e) if e.raw_os_error() == Some(3) => Ok(()),
