@@ -198,20 +198,22 @@ fn parse_display_lsdb() -> &'static CommandSet {
                 log!("\tOSPF with Router ID: {}", ProtocolDB::get_router_id());
                 log!("\t\tLink State Database");
                 block_on!(ProtocolDB::get()).areas.values().for_each(|area| {
-                    let lsa = area.get_all_area_lsa();
+                    let mut lsa = area.get_all_area_lsa();
                     must!(lsa.len() > 0);
                     log!("\t\t\tArea: {}", area.area_id);
                     log!("Type      LinkState ID    AdvRouter       Age   Len   Sequence");
+                    lsa.sort_by_key(|lsa| lsa.ls_type);
                     lsa.into_iter().for_each(|lsa| {
                         log!("{:<9} {:<15} {:<15} {:<5} {:<5} {:<10X}",
                             lsa::types::to_string(lsa.ls_type), lsa.link_state_id,
                             lsa.advertising_router, lsa.ls_age, lsa.length, lsa.ls_sequence_number);
                     });
                 });
-                let lsa = block_on!(Area::get_all_external_lsa());
+                let mut lsa = block_on!(Area::get_all_external_lsa());
                 must!(lsa.len() > 0);
                 log!("\t\tAS External Database");
                 log!("Type      LinkState ID    AdvRouter       Age   Len   Sequence");
+                lsa.sort_by_key(|(lsa, _)| lsa.ls_type);
                 lsa.into_iter().for_each(|(lsa, _)| {
                     log!("{:<9} {:<15} {:<15} {:<5} {:<5} {:<10X}",
                         lsa::types::to_string(lsa.ls_type), lsa.link_state_id,

@@ -12,6 +12,7 @@ use crate::{
     constant::{AllDRouters, AllSPFRouters, LsaMaxAge, MaxSequenceNumber, MinLSArrival},
     database::{InterfacesGuard, ProtocolDB},
     flooding::flooding,
+    gen_lsa::gen_summary_lsa,
     interface::InterfaceState,
     log_error, must,
     neighbor::{NeighborEvent, NeighborState, RefNeighbor},
@@ -85,8 +86,6 @@ async fn handle_one(
     if let Some(header) = neighbor!(meta).ls_request_list.front() {
         if LsaIndex::from(lsa.header) == LsaIndex::from(*header) {
             meta.get_neighbor().lsr_recv_update();
-            invoke!(meta.insert_lsa, lsa);
-            return ret!(continue);
         }
     }
     // 4. 如果 LSA 的 LS 时限等于 MaxAge, 而且路由器的连接状态数据库中没有该
@@ -132,6 +131,7 @@ async fn handle_one(
         // d) 将新的 LSA 加入连接状态数据库（取代当前数据库的副本），这可能导致按调度计算路由表
         invoke!(meta.insert_lsa, lsa.clone());
         ProtocolDB::get().await.recalc_routing().await;
+        gen_summary_lsa(&mut meta.0).await;
         // e）也许需要从接收接口发送 LSAck 包以确认所收到的 LSA。这在第 13.5 节说明。
         if !flood {
             if meta.0.me.state != InterfaceState::Backup || neighbor!(meta).is_dr() {
@@ -145,7 +145,17 @@ async fn handle_one(
             || lsa.header.ls_type == NETWORK_LSA
                 && meta.0.iter().any(|i| i.ip_addr == lsa.header.link_state_id)
         {
-            log_error!("todo: deal with self created lsa");
+            //todo! 目前自生成 lsa 考虑直接老化
+            if db_lsa.is_none() {
+                let mut lsa = lsa;
+                lsa.header.ls_age = LsaMaxAge;
+                invoke!(meta.insert_lsa, lsa.clone());
+                let packet = LSUpdate {
+                    num_lsa: 1,
+                    lsa: vec![lsa],
+                };
+                send_packet(&mut meta.0.me, &packet, meta.1).await;
+            }
         }
         return ret!(continue);
     }

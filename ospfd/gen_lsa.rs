@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{marker::PhantomData, net::Ipv4Addr};
 
 use ospf_packet::{
     lsa::{link_types::*, types::*, *},
@@ -6,8 +6,8 @@ use ospf_packet::{
 };
 
 use crate::{
-    constant::{InitialSequenceNumber, LsRefreshTime, MaxSequenceNumber},
-    database::{InterfacesGuard, ProtocolDB},
+    constant::{BackboneArea, InitialSequenceNumber, LSInfinity, LsRefreshTime, MaxSequenceNumber},
+    database::{InterfacesGuard, ProtocolDB, RoutingTableItemType, RoutingTablePathType},
     flooding::flooding,
     interface::{InterfaceState, NetType},
     log_warning, must,
@@ -47,7 +47,7 @@ pub async fn gen_router_lsa(interfaces: &mut InterfacesGuard) {
                     metric: iface.cost,
                 });
             } else {
-            // 否则，加入类型 3 连接（存根网络）
+                // 否则，加入类型 3 连接（存根网络）
                 lsa.links.push(RouterLSALink {
                     link_id: iface.ip_addr,
                     link_data: iface.ip_mask,
@@ -80,6 +80,54 @@ pub async fn gen_network_lsa(interfaces: &mut InterfacesGuard) {
     let router_id = ProtocolDB::get_router_id();
     let ls_id = interfaces.me.ip_addr;
     gen_lsa_impl(interfaces, NETWORK_LSA, ls_id, router_id, lsa).await;
+}
+
+pub async fn gen_summary_lsa(interfaces: &mut InterfacesGuard) {
+    let i_areas = interfaces
+        .iter()
+        .map(|i| i.area_id)
+        .collect::<std::collections::HashSet<_>>();
+    ProtocolDB::get()
+        .await
+        .areas
+        .retain(|area_id, _| i_areas.contains(area_id));
+    let db = ProtocolDB::get().await;
+    let router_id = ProtocolDB::get_router_id();
+    // 至少有两个区域
+    must!(db.areas.len() > 1);
+    use RoutingTablePathType::*;
+    let routings: Vec<_> = db
+        .routing_table
+        .get_routings()
+        .into_iter()
+        // 决不在 Summary-LSA 中宣告 AS 外部路径
+        .filter(|item| matches!(item.path_type, AreaInternal | AreaExternal))
+        // 不生成距离值等于或超过 LSInfinity
+        .filter(|item| item.cost < LSInfinity)
+        .collect();
+    let mut packets = vec![];
+    for item in &routings {
+        must!(interfaces.me.area_id != item.area_id; continue);
+        must!(interfaces.me.area_id != BackboneArea || item.path_type == AreaInternal; continue);
+        let lsa = SummaryLSA {
+            network_mask: item.addr_mask,
+            _zeros: PhantomData,
+            metric: item.cost,
+        };
+        packets.push(match item.dest_type {
+            RoutingTableItemType::Router => {
+                must!(interfaces.me.external_routing; continue);
+                (SUMMARY_ASBR_LSA, item.dest_id, lsa)
+            }
+            RoutingTableItemType::Network => {
+                (SUMMARY_IP_LSA, item.dest_id, lsa)
+            }
+        });
+    }
+    drop(db);
+    for (ls_type, link_state_id, lsa) in packets {
+        gen_lsa_impl(interfaces, ls_type, link_state_id, router_id, lsa).await;
+    }
 }
 
 /// 这个函数是一个模板。提供了 LsaHeader 的生成，以及和数据库的比对，和洪泛。

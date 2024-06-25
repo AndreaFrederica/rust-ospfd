@@ -100,7 +100,9 @@ impl ProtocolDB {
     }
 
     pub async fn recalc_routing(&mut self) {
-        self.routing_table.recalculate(self.areas.values_mut().collect()).await;
+        self.routing_table
+            .recalculate(self.areas.values_mut().collect())
+            .await;
     }
 }
 
@@ -128,6 +130,16 @@ impl ProtocolDB {
 pub struct InterfacesGuard {
     pub me: Guard<Interface>,
     pub other: Vec<Guard<Interface>>,
+}
+
+impl From<Vec<Guard<Interface>>> for InterfacesGuard {
+    fn from(value: Vec<Guard<Interface>>) -> Self {
+        let mut iter = value.into_iter();
+        Self {
+            me: iter.next().unwrap(),
+            other: iter.collect(),
+        }
+    }
 }
 
 impl InterfacesGuard {

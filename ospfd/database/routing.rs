@@ -115,6 +115,10 @@ impl RoutingTable {
         })
     }
 
+    pub fn get_routings(&self) -> Vec<&RoutingTableItem> {
+        self.table.values().collect()
+    }
+
     pub fn delete_all_routing(&self) {
         for item in self.table.values() {
             guard!(Ok(r) = RoutingItem::try_from(item); continue);
@@ -277,8 +281,8 @@ impl std::fmt::Display for RoutingTable {
             guard!(Ok(r) = RoutingItem::try_from(item); continue);
             writeln!(
                 f,
-                "{}, cost: {}/{}, type: {:?}",
-                r, item.cost, item.cost_t2, item.path_type
+                "{}, cost: {}/{}, area: {}, type: {:?}",
+                r, item.cost, item.cost_t2, item.area_id, item.path_type
             )?;
         }
         Ok(())

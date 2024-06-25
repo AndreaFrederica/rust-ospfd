@@ -51,6 +51,7 @@ impl ShortPathTree {
             .collect();
         edges.iter().for_each(|(id, map)| {
             map.keys().for_each(|&dest| {
+                must!(matches!(dest, NodeAddr::Stub(_)));
                 let lsa = lsa_db.get(id).unwrap().clone();
                 lsa_db.entry(dest).or_insert(lsa);
             })
@@ -74,12 +75,12 @@ impl ShortPathTree {
                 node.next_hops.extend(&nexthop);
             });
             must!(!tree.nodes.contains_key(&id); continue);
-            let lsa = lsa_db.get(&id).unwrap();
+            guard!(Some(lsa) = lsa_db.get(&id); continue);
             tree.nodes
                 .insert(id, TreeNode::new(id, lsa.clone(), distance, nexthop));
             must!(!matches!(id, NodeAddr::Stub(_)); continue);
             let node = tree.nodes.get(&id).unwrap();
-            let children = edges.get(&id).unwrap();
+            guard!(Some(children) = edges.get(&id); continue);
             area.transit_capability |= lsa_have_v(lsa);
             for (&child, &cost) in children {
                 // 已在树中
