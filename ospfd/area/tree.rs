@@ -27,10 +27,10 @@ impl ShortPathTree {
         }
     }
 
-    pub async fn calculate(area: &mut Area) -> Self {
+    pub fn calculate(area: &mut Area) -> Self {
         let router_id = ProtocolDB::get_router_id();
         // 0. 数据库拷贝
-        let lsa_briefs = area.get_all_lsa().await;
+        let lsa_briefs = area.get_all_area_lsa();
         let get_lsa = |header: LsaHeader| area.m_get_lsa(&HashMap::new(), header.into()).unwrap().0;
         let mut lsa_db: HashMap<_, _> = lsa_briefs
             .iter()
@@ -128,21 +128,20 @@ impl ShortPathTree {
             .nodes
             .values()
             .filter_map(|node| {
-                use RoutingTableItemType::*;
                 let addr = match node.id {
                     NodeAddr::Router(id) => {
                         let (_, router): (LsaHeader, RouterLSA) =
                             node.lsa.clone().try_into().unwrap();
                         must!(router.e == 1; ret: None);
-                        (Router, id, hex2ip(0))
+                        (RoutingTableItemType::Router, id, hex2ip(0))
                     }
                     NodeAddr::Network(ip) => {
                         let (_, network): (LsaHeader, NetworkLSA) =
                             node.lsa.clone().try_into().unwrap();
                         let addr = Ipv4AddrMask::from(ip, network.network_mask);
-                        (Network, addr.network(), addr.mask())
+                        (RoutingTableItemType::Network, addr.network(), addr.mask())
                     }
-                    NodeAddr::Stub(ip) => (Network, ip.network(), ip.mask()),
+                    NodeAddr::Stub(ip) => (RoutingTableItemType::Network, ip.network(), ip.mask()),
                 };
                 let next_hop = if node.next_hops.is_empty() {
                     Ipv4Addr::UNSPECIFIED

@@ -165,6 +165,7 @@ impl Interface {
         self.hello_timer.abort();
         self.wait_timer.abort();
         self.retransmission_timer.abort();
+        self.neighbors.clear();
         self.dr = hex2ip(0);
         self.bdr = hex2ip(0);
         self.cost = 0;

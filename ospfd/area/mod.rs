@@ -168,8 +168,8 @@ impl Area {
         db.2 = Instant::now();
     }
 
-    pub async fn recalc_routing(&mut self) {
-        self.short_path_tree = ShortPathTree::calculate(self).await;
+    pub fn recalc_routing(&mut self) {
+        self.short_path_tree = ShortPathTree::calculate(self);
     }
 
     pub fn get_routing(&self) -> Vec<RoutingTableItem> {

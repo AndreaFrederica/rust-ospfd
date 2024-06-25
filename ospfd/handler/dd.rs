@@ -120,8 +120,8 @@ pub async fn handle(mut src: RefNeighbor<'_>, packet: DBDescription) {
     } else {
         // send dd to slave
         neighbor.dd_seq_num = prev_state.dd_seq_num + 1;
-        must!(dd_cache.more; else: src.exchange_done().await);
-        let len = neighbor.db_summary_list.len().min(12);
+        let len: usize = neighbor.db_summary_list.len().min(12);
+        must!(dd_cache.more || len > 0; else: src.exchange_done().await);
         let packet = DBDescription {
             interface_mtu: 0,
             options: neighbor.option,

@@ -4,7 +4,11 @@ use ospf_packet::lsa::LsaIndex;
 use ospf_routing::{add_route as lib_add_route, delete_route as lib_delete_route, RoutingItem};
 
 use crate::{
-    area::Area, constant::{BackboneArea, LSInfinity}, database::ProtocolDB, guard, log_success, must, util::ip2hex
+    area::Area,
+    constant::{BackboneArea, LSInfinity},
+    database::ProtocolDB,
+    guard, log_success, must,
+    util::ip2hex,
 };
 
 #[derive(Debug, Clone)]
@@ -22,9 +26,16 @@ impl RoutingTable {
     pub async fn recalculate(&mut self, mut areas: Vec<&mut Area>) {
         let old_table = std::mem::take(&mut self.table);
         for area in areas.iter_mut() {
-            area.recalc_routing().await;
+            area.recalc_routing();
             area.get_routing().into_iter().for_each(|item| {
-                self.table.insert(item.into(), item);
+                self.table
+                    .entry(item.into())
+                    .and_modify(|old| {
+                        if item.better_than(old) {
+                            *old = item;
+                        }
+                    })
+                    .or_insert(item);
             });
         }
         // FIXME: 现在是全部重新计算，可以考虑使用增量计算
