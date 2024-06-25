@@ -47,12 +47,20 @@ impl Lsa {
         let mul = (self.header.length as i32 - 16) * c0;
         let mut x = mul - c0 - c1;
         let mut y = c1 - mul;
-        if y < 0 { y -= 1; }
-        if x < 0 { x -= 1; }
+        if y < 0 {
+            y -= 1;
+        }
+        if x < 0 {
+            x -= 1;
+        }
         let mut x = (x as u32) % 0xff;
         let mut y = (y as u32) % 0xff;
-        if x == 0 { x = 255; }
-        if y == 0 { y = 255; }
+        if x == 0 {
+            x = 255;
+        }
+        if y == 0 {
+            y = 255;
+        }
         let (x, y) = (x as u16, y as u16);
         (x << 8) | y
     }
@@ -157,8 +165,7 @@ impl PartialEq for LsaHeader {
     }
 }
 
-#[derive(Clone, Debug)]
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LsaData {
     Router(RouterLSA),
     Network(NetworkLSA),
@@ -201,8 +208,11 @@ impl PartialEq for RouterLSA {
         let mut other_links = other.links.clone();
         self_links.sort_unstable();
         other_links.sort_unstable();
-        self.v == other.v && self.e == other.e && self.b == other.b
-            && self.num_links == other.num_links && self_links == other_links
+        self.v == other.v
+            && self.e == other.e
+            && self.b == other.b
+            && self.num_links == other.num_links
+            && self_links == other_links
     }
 }
 
@@ -247,6 +257,16 @@ pub mod link_types {
     pub const TRANSIT_LINK: u8 = 2;
     pub const STUB_LINK: u8 = 3;
     pub const VIRTUAL_LINK: u8 = 4;
+
+    pub fn to_string(link_type: u8) -> &'static str {
+        match link_type {
+            P2P_LINK => "P2P",
+            TRANSIT_LINK => "Transit",
+            STUB_LINK => "Stub",
+            VIRTUAL_LINK => "Virtual",
+            _ => "Unknown",
+        }
+    }
 }
 
 #[raw_packet]
@@ -309,7 +329,11 @@ impl TryFrom<Lsa> for (LsaHeader, $T) {
 
 build_convert!(RouterLSA, (ROUTER_LSA, Router));
 build_convert!(NetworkLSA, (NETWORK_LSA, Network));
-build_convert!(SummaryLSA, (SUMMARY_IP_LSA, SummaryIP), (SUMMARY_ASBR_LSA, SummaryASBR));
+build_convert!(
+    SummaryLSA,
+    (SUMMARY_IP_LSA, SummaryIP),
+    (SUMMARY_ASBR_LSA, SummaryASBR)
+);
 build_convert!(AsExternalLSA, (AS_EXTERNAL_LSA, ASExternal));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -336,5 +360,20 @@ impl From<LsaHeader> for LsaIndex {
             ls_id: value.link_state_id,
             ad_router: value.advertising_router,
         }
+    }
+}
+
+impl std::fmt::Display for LsaHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:<9} {:<15} {:<15} {:<5} {:<5} {:<10X}",
+            types::to_string(self.ls_type),
+            self.link_state_id,
+            self.advertising_router,
+            self.ls_age,
+            self.length,
+            self.ls_sequence_number,
+        )
     }
 }

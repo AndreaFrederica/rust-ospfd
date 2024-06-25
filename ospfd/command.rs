@@ -1,7 +1,6 @@
 use std::{collections::HashMap, process::exit, sync::OnceLock};
 
 use lazy_static::lazy_static;
-use ospf_packet::lsa;
 use trie_rs::{Trie, TrieBuilder};
 
 use crate::{
@@ -203,22 +202,14 @@ fn parse_display_lsdb() -> &'static CommandSet {
                     log!("\t\t\tArea: {}", area.area_id);
                     log!("Type      LinkState ID    AdvRouter       Age   Len   Sequence");
                     lsa.sort_by_key(|lsa| lsa.ls_type);
-                    lsa.into_iter().for_each(|lsa| {
-                        log!("{:<9} {:<15} {:<15} {:<5} {:<5} {:<10X}",
-                            lsa::types::to_string(lsa.ls_type), lsa.link_state_id,
-                            lsa.advertising_router, lsa.ls_age, lsa.length, lsa.ls_sequence_number);
-                    });
+                    lsa.into_iter().for_each(|lsa| log!("{}", lsa));
                 });
                 let mut lsa = block_on!(Area::get_all_external_lsa());
                 must!(lsa.len() > 0);
                 log!("\t\tAS External Database");
                 log!("Type      LinkState ID    AdvRouter       Age   Len   Sequence");
                 lsa.sort_by_key(|(lsa, _)| lsa.ls_type);
-                lsa.into_iter().for_each(|(lsa, _)| {
-                    log!("{:<9} {:<15} {:<15} {:<5} {:<5} {:<10X}",
-                        lsa::types::to_string(lsa.ls_type), lsa.link_state_id,
-                        lsa.advertising_router, lsa.ls_age, lsa.length, lsa.ls_sequence_number);
-                });
+                lsa.into_iter().for_each(|(lsa, _)| log!("{}", lsa));
             };
         };
     };
