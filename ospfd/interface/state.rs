@@ -184,6 +184,7 @@ fn set_hello_timer(interface: &mut Interface) {
                         let lsa: Vec<_> = n
                             .ls_retransmission_list
                             .iter()
+                            .take(8)
                             .filter_map(|&key| {
                                 rt.block_on(rt.block_on(ProtocolDB::get()).get_lsa(area_id, key))
                                     .map(|(lsa, ..)| lsa)

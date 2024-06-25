@@ -1,13 +1,19 @@
 use std::{collections::HashMap, net::Ipv4Addr};
 
 use ospf_packet::lsa::LsaIndex;
-use ospf_routing::{add_route as lib_add_route, delete_route, RoutingItem};
+use ospf_routing::{add_route as lib_add_route, delete_route as lib_delete_route, RoutingItem};
 
-use crate::{area::Area, log, log_warning, util::ip2hex};
+use crate::{
+    area::Area,
+    constant::{BackboneArea, LSInfinity},
+    database::ProtocolDB,
+    guard, log, must,
+    util::ip2hex,
+};
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
-    table: HashMap<Ipv4AddrMask, RoutingTableItem>,
+    table: HashMap<RoutingTableIndex, RoutingTableItem>,
 }
 
 impl RoutingTable {
@@ -17,29 +23,89 @@ impl RoutingTable {
         }
     }
 
-    pub async fn recalculate(&mut self, areas: Vec<&mut Area>) {
+    pub async fn recalculate(&mut self, mut areas: Vec<&mut Area>) {
         let old_table = std::mem::take(&mut self.table);
-        for area in areas {
+        for area in areas.iter_mut() {
             area.recalc_routing().await;
             area.get_routing().into_iter().for_each(|item| {
-                self.table
-                    .insert(Ipv4AddrMask::from(item.dest_id, item.addr_mask), item);
+                self.table.insert(item.into(), item);
             });
         }
-        log_warning!("todo! calculate external routing");
+        // FIXME: 现在是全部重新计算，可以考虑使用增量计算
+        // 另：目前不可能存在相同路径有多个的情况，会直接覆盖
+        for area in areas.iter() {
+            for item in area.get_routing_external().await {
+                self.table
+                    .entry(item.into())
+                    .and_modify(|old| {
+                        if item.better_than(old) {
+                            *old = item;
+                        }
+                    })
+                    .or_insert(item);
+            }
+        }
+        // 传输区域计算暂未考虑
+        // 计算 AS External
+        for (header, lsa) in Area::get_all_external_lsa().await {
+            use RoutingTableIndex::*;
+            use RoutingTablePathType::*;
+            must!(lsa.metric < LSInfinity; continue);
+            must!(header.advertising_router != ProtocolDB::get_router_id(); continue);
+            let addr = Ipv4AddrMask::from(header.link_state_id, lsa.network_mask);
+            guard!(Some(asbr) = self.table.get(&AsbrRouter(header.advertising_router)); continue);
+            let forwarding = if lsa.forwarding_address == Ipv4Addr::UNSPECIFIED {
+                // forward to asbr
+                asbr
+            } else {
+                // forward to forwarding_address
+                guard!(Some(net) = self.get_routing(lsa.forwarding_address); continue);
+                net
+            };
+            let t1 = lsa.e == 0; // is type 1 external routing
+            let item = RoutingTableItem {
+                dest_type: RoutingTableItemType::Network,
+                dest_id: addr.network(),
+                addr_mask: addr.mask(),
+                external_cap: true,
+                area_id: BackboneArea,
+                path_type: if t1 { AsExternalT1 } else { AsExternalT2 },
+                cost: forwarding.cost + if t1 { lsa.metric } else { 0 },
+                cost_t2: forwarding.cost_t2 + if t1 { 0 } else { lsa.metric },
+                lsa_origin: header.into(),
+                next_hop: forwarding.next_hop,
+                ad_router: header.advertising_router,
+            };
+            self.table
+                .entry(item.into())
+                .and_modify(|old| {
+                    if item.better_than(old) {
+                        *old = item;
+                    }
+                })
+                .or_insert(item);
+        }
         old_table.iter().for_each(|(k, old)| {
-            let old = RoutingItem::from(old);
+            guard!(Ok(old) = RoutingItem::try_from(old));
             let new = self.table.get(k);
-            if !new.is_some_and(|new| old == new.into()) {
+            if !new.is_some_and(|new| new.try_into().is_ok_and(|new| old == new)) {
                 log!("delete route: {:?}", delete_route(old));
             }
         });
         self.table.iter().for_each(|(k, new)| {
-            let new = RoutingItem::from(new);
-            if !old_table.get(k).is_some_and(|old| new == old.into()) {
+            guard!(Ok(new) = RoutingItem::try_from(new));
+            let old = old_table.get(k);
+            if !old.is_some_and(|old| old.try_into().is_ok_and(|old| new == old)) {
                 log!("add route: {:?}", add_route(new));
             }
         });
+    }
+
+    pub fn get_routing(&self, ip: Ipv4Addr) -> Option<&RoutingTableItem> {
+        (0..=32).rev().find_map(|mask| {
+            let addr = Ipv4AddrMask(ip, mask);
+            self.table.get(&RoutingTableIndex::Network(addr))
+        })
     }
 }
 
@@ -47,11 +113,20 @@ impl RoutingTable {
 /// if the route already exists, delete it first
 fn add_route(r: RoutingItem) -> Result<(), std::io::Error> {
     use std::io::ErrorKind::AlreadyExists;
+    must!(r.nexthop != Ipv4Addr::UNSPECIFIED; ret: Ok(()));
     match lib_add_route(r) {
         Err(e) if e.kind() == AlreadyExists => {
             delete_route(r)?;
             lib_add_route(r)
         }
+        any => any,
+    }
+}
+
+fn delete_route(r: RoutingItem) -> Result<(), std::io::Error> {
+    match lib_delete_route(r) {
+        // route not exists
+        Err(e) if e.raw_os_error() == Some(3) => Ok(()),
         any => any,
     }
 }
@@ -93,7 +168,24 @@ impl Default for Ipv4AddrMask {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum RoutingTableIndex {
+    Network(Ipv4AddrMask),
+    AsbrRouter(Ipv4Addr),
+}
+
+impl From<RoutingTableItem> for RoutingTableIndex {
+    fn from(value: RoutingTableItem) -> Self {
+        match value.dest_type {
+            RoutingTableItemType::Network => {
+                RoutingTableIndex::Network(Ipv4AddrMask::from(value.dest_id, value.addr_mask))
+            }
+            RoutingTableItemType::Router => RoutingTableIndex::AsbrRouter(value.dest_id),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct RoutingTableItem {
     /// 目标类型/Destination Type
     pub dest_type: RoutingTableItemType,
@@ -119,23 +211,39 @@ pub struct RoutingTableItem {
     pub ad_router: Ipv4Addr,
 }
 
-impl From<&RoutingTableItem> for RoutingItem {
-    fn from(value: &RoutingTableItem) -> Self {
-        Self {
-            dest: value.dest_id,
-            mask: value.addr_mask,
-            nexthop: value.next_hop,
+impl RoutingTableItem {
+    pub fn better_than(&self, other: &Self) -> bool {
+        match self.path_type.cmp(&other.path_type) {
+            std::cmp::Ordering::Less => true,
+            std::cmp::Ordering::Greater => false,
+            std::cmp::Ordering::Equal => match self.cost_t2.cmp(&other.cost_t2) {
+                std::cmp::Ordering::Less => true,
+                std::cmp::Ordering::Equal => false,
+                std::cmp::Ordering::Greater => self.cost < other.cost,
+            },
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl TryFrom<&RoutingTableItem> for RoutingItem {
+    type Error = &'static str;
+    fn try_from(value: &RoutingTableItem) -> Result<Self, Self::Error> {
+        must!(value.dest_type == RoutingTableItemType::Network; ret: Err("not a network route"));
+        Ok(Self {
+            dest: value.dest_id,
+            mask: value.addr_mask,
+            nexthop: value.next_hop,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RoutingTableItemType {
     Network,
     Router,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RoutingTablePathType {
     /// 区域内路径
     AreaInternal,
@@ -151,11 +259,12 @@ impl std::fmt::Display for RoutingTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "OSPF Routing Table")?;
         for item in self.table.values() {
-            let Ok(item): Result<RoutingItem, _> = item.try_into() else {
-                crate::log_error!("failed to convert RoutingTableItem to RoutingItem: {item:#?}");
-                continue;
-            };
-            writeln!(f, "{}", item)?;
+            guard!(Ok(r) = RoutingItem::try_from(item); continue);
+            writeln!(
+                f,
+                "{}, cost: {}/{}, type: {:?}",
+                r, item.cost, item.cost_t2, item.path_type
+            )?;
         }
         Ok(())
     }

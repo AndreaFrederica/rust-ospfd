@@ -35,20 +35,26 @@ impl Lsa {
         let (c0, c1) = (c0 as i32, c1 as i32);
         let mul = (self.header.length as i32 - 16) * c0;
         let mut x = mul - c0 - c1;
-        let mut y = c1 - mul - 1;
-        if y >= 0 { y += 1; }
+        let mut y = c1 - mul;
+        if y < 0 { y -= 1; }
         if x < 0 { x -= 1; }
-        x %= 255;
-        y %= 255;
+        let mut x = (x as u32) % 0xff;
+        let mut y = (y as u32) % 0xff;
         if x == 0 { x = 255; }
         if y == 0 { y = 255; }
-        y &= 0x00FF;
         let (x, y) = (x as u16, y as u16);
         (x << 8) | y
     }
 
     pub fn checksum_ok(&self) -> bool {
-        self.checksum() == self.header.ls_checksum
+        let buf = self.to_bytes().split_off(2); // drop ls_age
+        let mut c0 = 0u16;
+        let mut c1 = 0u16;
+        for &byte in buf.as_ref() {
+            c0 = (c0 + byte as u16) % 0xFF;
+            c1 = (c1 + c0) % 0xFF;
+        }
+        c0 == 0 && c1 == 0
     }
 
     pub fn update_checksum(&mut self) {
@@ -166,8 +172,11 @@ impl ToBytesMut for LsaData {
 #[derive(Eq)]
 pub struct RouterLSA {
     pub _z1: PhantomData<u5>,
+    /// virtual link endpoint
     pub v: u1,
+    /// asbr
     pub e: u1,
+    /// abr
     pub b: u1,
     pub _z2: PhantomData<u8>,
     pub num_links: u16,

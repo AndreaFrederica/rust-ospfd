@@ -76,9 +76,9 @@ async fn handle_one(
     vec: &mut Vec<LsaHeader>,
 ) -> ControlFlow<(), ()> {
     // 1. 确认 LSA 的 LS 校验和。
-    must!(lsa.checksum_ok(); ret: ret!(continue));
+    must!(lsa.checksum_ok(); else: log_error!("ls checksum error"); ret: ret!(continue));
     // 2. 检查 LSA 的 LS 类型。
-    must!(matches!(lsa.header.ls_type, 1..=5); ret: ret!(continue));
+    must!(matches!(lsa.header.ls_type, 1..=5); else: log_error!("ls_type error"); ret: ret!(continue));
     // 3. 如果是一个 AS-external-LSA
     must!(!matches!(lsa.header.ls_type, AS_EXTERNAL_LSA) || meta.0.me.external_routing; ret: ret!(continue));
     // special: 如果这是邻居对我的 lsr 的回应

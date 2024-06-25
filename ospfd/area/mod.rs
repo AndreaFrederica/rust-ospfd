@@ -11,7 +11,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use ospf_packet::lsa::{types::AS_EXTERNAL_LSA, Lsa, LsaHeader, LsaIndex};
+use ospf_packet::lsa::{types::AS_EXTERNAL_LSA, AsExternalLSA, Lsa, LsaHeader, LsaIndex};
 use tokio::sync::Mutex;
 
 use lsa::LsaTimer;
@@ -57,6 +57,16 @@ impl Area {
 }
 
 impl Area {
+    pub async fn get_all_external_lsa() -> Vec<(LsaHeader, AsExternalLSA)> {
+        let db = STATIC_DB.lock().await;
+        db.values()
+            .map(|(lsa, ..)| lsa)
+            .filter(|lsa| lsa.header.ls_age != LsaMaxAge)
+            .cloned()
+            .filter_map(|lsa| lsa.try_into().ok())
+            .collect()
+    }
+
     fn m_external_db<T>(&self, db: T) -> Option<T> {
         if self.external_routing_capability {
             Some(db)
@@ -156,6 +166,10 @@ impl Area {
 
     pub fn get_routing(&self) -> Vec<RoutingTableItem> {
         ShortPathTree::get_routing(self)
+    }
+
+    pub async fn get_routing_external(&self) -> Vec<RoutingTableItem> {
+        ShortPathTree::get_routing_external(self).await
     }
 }
 

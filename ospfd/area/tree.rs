@@ -6,7 +6,12 @@ use std::{
 
 use ospf_packet::lsa::{link_types::*, types::*, *};
 
-use crate::{constant::LsaMaxAge, database::*, guard, must};
+use crate::{
+    constant::{LSInfinity, LsaMaxAge},
+    database::*,
+    guard, log_error, must,
+    util::hex2ip,
+};
 
 use super::Area;
 
@@ -105,10 +110,12 @@ impl ShortPathTree {
                 NodeAddr::Router(_) => {
                     guard!(NodeAddr::Network(network) = parent.id; ret: vec![]);
                     guard!(LsaData::Router(ref lsa) = lsa.data; ret: vec![]);
-                    lsa.links.iter().find(|link| link.link_type == TRANSIT_LINK && link.link_id == network)
+                    lsa.links
+                        .iter()
+                        .find(|link| link.link_type == TRANSIT_LINK && link.link_id == network)
                         .map(|link| vec![link.link_data])
                         .unwrap_or(vec![])
-                },
+                }
                 _ => vec![],
             }
         } else {
@@ -121,32 +128,79 @@ impl ShortPathTree {
             .nodes
             .values()
             .filter_map(|node| {
+                use RoutingTableItemType::*;
                 let addr = match node.id {
-                    NodeAddr::Router(_) => None,
+                    NodeAddr::Router(id) => {
+                        let (_, router): (LsaHeader, RouterLSA) =
+                            node.lsa.clone().try_into().unwrap();
+                        must!(router.e == 1; ret: None);
+                        (Router, id, hex2ip(0))
+                    }
                     NodeAddr::Network(ip) => {
                         let (_, network): (LsaHeader, NetworkLSA) =
                             node.lsa.clone().try_into().unwrap();
-                        Some(Ipv4AddrMask::from(ip, network.network_mask))
+                        let addr = Ipv4AddrMask::from(ip, network.network_mask);
+                        (Network, addr.network(), addr.mask())
                     }
-                    NodeAddr::Stub(ip) => Some(ip),
+                    NodeAddr::Stub(ip) => (Network, ip.network(), ip.mask()),
                 };
-                must!(!node.next_hops.is_empty(); ret: None);
-                guard!(Some(addr) = addr; ret: None);
+                let next_hop = if node.next_hops.is_empty() {
+                    Ipv4Addr::UNSPECIFIED
+                } else {
+                    node.next_hops[0]
+                };
                 Some(RoutingTableItem {
-                    dest_type: RoutingTableItemType::Network,
-                    dest_id: addr.network(),
-                    addr_mask: addr.mask(),
+                    dest_type: addr.0,
+                    dest_id: addr.1,
+                    addr_mask: addr.2,
                     external_cap: area.external_routing_capability,
                     area_id: area.area_id,
-                    path_type: RoutingTablePathType::AreaExternal,
+                    path_type: RoutingTablePathType::AreaInternal,
                     cost: node.distance,
                     cost_t2: 0,
                     lsa_origin: node.lsa.header.into(),
-                    next_hop: node.next_hops[0],
+                    next_hop,
                     ad_router: node.lsa.header.advertising_router,
                 })
             })
             .collect()
+    }
+
+    pub async fn get_routing_external(area: &Area) -> Vec<RoutingTableItem> {
+        area.get_all_lsa()
+            .await
+            .into_iter()
+            .filter(|header| matches!(header.ls_type, SUMMARY_IP_LSA | SUMMARY_ASBR_LSA))
+            .filter(|header| header.advertising_router != ProtocolDB::get_router_id()) // 计算路由器自己生成的
+            .filter(|header| header.ls_age != LsaMaxAge) // 过期的 LSA
+            .filter_map(|header| area.m_get_lsa(&Default::default(), header.into()))
+            .map(|(lsa, ..)| <(LsaHeader, SummaryLSA)>::try_from(lsa).unwrap())
+            .filter(|(_, lsa)| lsa.metric < LSInfinity) // 太远了
+            .filter_map(|(header, lsa)| {
+                // Border router
+                guard!(Some(br) = area.short_path_tree.nodes.get(&NodeAddr::Router(header.advertising_router)); ret: None);
+                must!(!br.next_hops.is_empty(); else: log_error!("Border Router {} Unreachable!", header.advertising_router); ret: None);
+                let data = if header.ls_type == SUMMARY_IP_LSA {
+                    let addr = Ipv4AddrMask::from(header.link_state_id, lsa.network_mask);
+                    (RoutingTableItemType::Network, addr.network(), addr.mask())
+                } else {
+                    must!(area.external_routing_capability; ret: None);
+                    (RoutingTableItemType::Router, header.link_state_id, hex2ip(0))
+                };
+                Some(RoutingTableItem {
+                    dest_type: data.0,
+                    dest_id: data.1,
+                    addr_mask: data.2,
+                    external_cap: area.external_routing_capability,
+                    area_id: area.area_id,
+                    path_type: RoutingTablePathType::AreaExternal,
+                    cost: br.distance + lsa.metric,
+                    cost_t2: 0,
+                    lsa_origin: header.into(),
+                    next_hop: br.next_hops[0],
+                    ad_router: header.advertising_router,
+                })
+            }).collect()
     }
 }
 
