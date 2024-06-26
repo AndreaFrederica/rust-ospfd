@@ -102,7 +102,7 @@ impl<'a> RefNeighbor<'a> {
                 drop(iface);
                 tokio::time::sleep(interval).await;
             }
-        })));
+        }).into()));
     }
 }
 

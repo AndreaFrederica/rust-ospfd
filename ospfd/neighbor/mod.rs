@@ -85,17 +85,13 @@ impl Neighbor {
 
 #[derive(Debug)]
 pub enum DdRxmt {
-    Handle(tokio::task::JoinHandle<()>),
+    Handle(AbortHandle),
     Packet(DBDescription),
     None,
 }
 
 impl DdRxmt {
     pub fn reset(&mut self) {
-        match self {
-            DdRxmt::Handle(h) => h.abort(),
-            _ => (),
-        }
         *self = DdRxmt::None;
     }
 
