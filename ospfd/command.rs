@@ -232,6 +232,7 @@ fn parse_interface_name(name: &str) -> &'static CommandSet {
         NAME = name.to_string();
         IFACE = Some(command! {
             "area_id"("interface area setting") => || parse_interface_area(NAME.clone());
+            "cost"("interface cost setting") => || parse_interface_cost(NAME.clone());
         });
         IFACE.as_ref().unwrap()
     }
@@ -262,6 +263,33 @@ fn parse_interface_area_id(name: String, arg: &str) -> &'static CommandSet {
                 block_on!(ProtocolDB::get()).areas.insert(id, Area::new(id));
                 iface.area_id = id;
                 block_on!(iface.interface_up());
+            };
+        });
+        IFACE.as_ref().unwrap()
+    }
+}
+
+fn parse_interface_cost(name: String) -> &'static CommandSet {
+    static mut IFACE: Option<CommandSet> = None;
+    static mut NAME: String = String::new();
+    unsafe {
+        NAME = name;
+        IFACE = Some(command! {
+            arg: "<cost>"("interface cost setting") => |arg| parse_interface_cost_set(NAME.clone(), arg);
+        });
+        &IFACE.as_ref().unwrap()
+    }
+}
+
+fn parse_interface_cost_set(name: String, arg: &str) -> &'static CommandSet {
+    static mut IFACE: Option<CommandSet> = None;
+    let arg = arg.to_string();
+    unsafe {
+        IFACE = Some(command! {
+            enter: ("changing interface cost") => move || {
+                guard!(Some(mut iface) = ProtocolDB::get_interface_by_name(name.as_str()); error: "bad interface_name: {name}");
+                guard!(Ok(cost) = arg.parse(); error: "bad cost: {arg}");
+                iface.cost = cost;
             };
         });
         IFACE.as_ref().unwrap()
