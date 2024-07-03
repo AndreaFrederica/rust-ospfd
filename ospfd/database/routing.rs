@@ -7,7 +7,7 @@ use crate::{
     area::Area,
     constant::{BackboneArea, LSInfinity},
     database::ProtocolDB,
-    guard, log_success, must,
+    guard, log_error, must,
     util::ip2hex,
 };
 
@@ -96,14 +96,14 @@ impl RoutingTable {
             guard!(Ok(old) = RoutingItem::try_from(old));
             let new = self.table.get(k);
             if !new.is_some_and(|new| new.try_into().is_ok_and(|new| old == new)) {
-                log_success!("delete route: {:?}", delete_route(old));
+                delete_route(old).unwrap_or_else(|e| log_error!("Error(delete route): {:?}", e));
             }
         });
         self.table.iter().for_each(|(k, new)| {
             guard!(Ok(new) = RoutingItem::try_from(new));
             let old = old_table.get(k);
             if !old.is_some_and(|old| old.try_into().is_ok_and(|old| new == old)) {
-                log_success!("add route: {:?}", add_route(new));
+                add_route(new).unwrap_or_else(|e| log_error!("Error(add route): {:?}", e));
             }
         });
     }
@@ -122,7 +122,7 @@ impl RoutingTable {
     pub fn delete_all_routing(&self) {
         for item in self.table.values() {
             guard!(Ok(r) = RoutingItem::try_from(item); continue);
-            log_success!("delete route: {:?}", delete_route(r));
+            delete_route(r).unwrap_or_else(|e| log_error!("Error(delete route): {:?}", e));
         }
     }
 }
