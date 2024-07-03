@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! log {
     () => {{
-        println()
+        println!()
     }};
     ($($arg:tt)*) => {{
         println!($($arg)*)
