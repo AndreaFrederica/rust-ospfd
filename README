@@ -1,0 +1,2 @@
+support os: ubuntu 18.04/20.04/22.04
+support compiler: cargo 1.76+
