@@ -99,7 +99,7 @@ pub fn parse_cmd(raw: String) {
     if !raw.ends_with('\n') {
         log!();
     }
-    let raw = raw.trim();
+    let raw = raw.trim().to_lowercase();
     let mut list = raw.split_ascii_whitespace();
     let mut set: &CommandSet = &ROOT;
     while let Some(cmd) = list.next() {
