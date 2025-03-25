@@ -1,17 +1,17 @@
 #[macro_export]
 macro_rules! log {
     () => {{
-        println!()
+        println!("\r\x1b[2K")
     }};
     ($($arg:tt)*) => {{
-        println!($($arg)*)
+        println!("\r\x1b[2K{}", format!($($arg)*))
     }};
 }
 
 #[macro_export]
 macro_rules! log_warning {
     ($($arg:tt)*) => {{
-        print!("\x1b[33m");
+        print!("\r\x1b[2K\x1b[33m");
         print!($($arg)*);
         print!("\x1b[39m");
         println!()
@@ -21,7 +21,7 @@ macro_rules! log_warning {
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {{
-        print!("\x1b[31m");
+        print!("\r\x1b[2K\x1b[31m");
         print!($($arg)*);
         print!("\x1b[39m");
         println!()
@@ -31,7 +31,7 @@ macro_rules! log_error {
 #[macro_export]
 macro_rules! log_success {
     ($($arg:tt)*) => {{
-        print!("\x1b[32m");
+        print!("\r\x1b[2K\x1b[32m");
         print!($($arg)*);
         print!("\x1b[39m");
         println!()

@@ -1,22 +1,50 @@
-use std::{collections::HashMap, process::exit, sync::OnceLock};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::{stdout, Write},
+    process::exit,
+    sync::{Mutex, OnceLock},
+};
 
 use lazy_static::lazy_static;
 use trie_rs::{Trie, TrieBuilder};
-
-use crate::{
-    area::Area, database::ProtocolDB, guard, interface::InterfaceEvent, log, log_success, must,
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEvent}, // 移除了 KeyModifiers
+    execute,
+    terminal::{self, Clear, ClearType},
 };
 
+use crate::{
+    area::Area,
+    database::ProtocolDB,
+    guard,
+    interface::InterfaceEvent,
+    log,
+    log_success,
+    must,
+};
+
+use tokio::signal;
+
+/// 最大保存 50 条历史命令
+const MAX_HISTORY: usize = 50;
+
+/// 全局历史命令记录
+lazy_static! {
+    static ref COMMAND_HISTORY: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+}
+
+/// 命令树结构
 struct CommandSet {
-    /// supported commands
+    /// 支持的命令（Trie 自动匹配）
     trie: Trie<u8>,
-    /// command descriptions
+    /// 命令描述
     desc: HashMap<&'static str, &'static str>,
-    /// handler for the command
+    /// 命令对应的处理函数
     handlers: HashMap<&'static str, Box<dyn Fn() -> &'static CommandSet + Sync>>,
-    /// handler for running this command
+    /// 直接敲回车执行的处理函数
     handle_enter: Option<Box<dyn Fn() + Sync>>,
-    /// handler for the command with arbitrary argument
+    /// 带任意参数的命令处理函数
     arbitrary: Option<Box<dyn Fn(&str) -> &'static CommandSet + Sync>>,
 }
 
@@ -28,6 +56,7 @@ impl CommandSet {
         arbitrary: Option<Box<dyn Fn(&str) -> &'static CommandSet + Sync>>,
     ) -> Self {
         let mut builder = TrieBuilder::new();
+        // 过滤掉以 "<" 开头的特殊描述
         desc.keys()
             .filter(|s| !s.starts_with("<"))
             .for_each(|&s| builder.push(s));
@@ -41,16 +70,20 @@ impl CommandSet {
     }
 }
 
+/// 宏定义方便构造 CommandSet
 macro_rules! command {
     (
-        $(enter: ($ve:literal) => $fe:expr;)? // 直接敲下回车要执行的
-        $(arg: $ka:literal ($va:literal) => $fa:expr;)? // 有任意参数的
-        $($k:literal ($v:literal) => $f:expr;)* // 固定匹配指令的
-    ) => { #[allow(unused_mut, unused_assignments)] {
+        $(enter: ($ve:literal) => $fe:expr;)?
+        $(arg: $ka:literal ($va:literal) => $fa:expr;)?
+        $($k:literal ($v:literal) => $f:expr;)*
+    ) => {{
+        #[allow(unused_mut, unused_assignments)]
         let mut desc = HashMap::<&str, &str>::new();
-        let mut handlers = HashMap::<&str, Box<dyn Fn() -> &'static CommandSet + Sync>>::new();
+        let mut handlers =
+            HashMap::<&str, Box<dyn Fn() -> &'static CommandSet + Sync>>::new();
         let mut handle_enter = Option::<Box<dyn Fn() + Sync>>::None;
-        let mut arbitrary = Option::<Box<dyn Fn(&str) -> &'static CommandSet + Sync>>::None;
+        let mut arbitrary =
+            Option::<Box<dyn Fn(&str) -> &'static CommandSet + Sync>>::None;
         $(
             desc.insert("<enter>", $ve);
             handle_enter = Some(Box::new($fe));
@@ -76,16 +109,19 @@ lazy_static! {
     };
 }
 
+/// 用于异步操作的全局运行时句柄
 pub static RUNTIME: OnceLock<tokio::runtime::Handle> = OnceLock::new();
 
+/// 处理命令错误时调用的宏
 macro_rules! error {
     ($raw:expr, $cur:expr, $msg:expr) => {{
         let idx = unsafe { $cur.as_ptr().offset_from($raw.as_ptr()) } as usize;
-        crate::log_error!("{}\n{}^ {}", $raw, " ".repeat(idx), $msg);
+        crate::log_error!("{}\r\n{}^ {}", $raw, " ".repeat(idx), $msg);
         return;
     }};
 }
 
+/// 显示当前命令集合的帮助信息
 fn display_help(desc: &HashMap<&str, &str>) {
     let max_key_len = desc.keys().map(|s| s.len()).max().unwrap();
     let mut vec: Vec<_> = desc.iter().collect();
@@ -95,6 +131,7 @@ fn display_help(desc: &HashMap<&str, &str>) {
     }
 }
 
+/// 根据用户输入的命令字符串进行解析并执行对应命令
 pub fn parse_cmd(raw: String) {
     if !raw.ends_with('\n') {
         log!();
@@ -137,16 +174,18 @@ pub fn parse_cmd(raw: String) {
     if let Some(ref hd) = set.handle_enter {
         hd();
     } else {
-        error!(raw, raw[raw.len() - 1..], "bad command");
+        error!(raw, &raw[raw.len() - 1..], "bad command");
     }
 }
 
+/// 用于在命令中执行异步操作
 macro_rules! block_on {
     ($e:expr) => {
         RUNTIME.get().unwrap().block_on($e)
     };
 }
 
+/// display 相关命令
 fn parse_display() -> &'static CommandSet {
     lazy_static! {
         static ref DISPLAY: CommandSet = command! {
@@ -154,7 +193,7 @@ fn parse_display() -> &'static CommandSet {
             "peer"("display ospf neighbors") => parse_display_peer;
             "lsdb"("display ospf link state database") => parse_display_lsdb;
         };
-    };
+    }
     &DISPLAY
 }
 
@@ -164,7 +203,7 @@ fn parse_display_routing() -> &'static CommandSet {
             enter: ("display routing table") => || log!("{}", block_on!(ProtocolDB::get()).routing_table);
             "system" ("display system routing table") => parse_display_routing_system;
         };
-    };
+    }
     &DISPLAY
 }
 
@@ -173,7 +212,7 @@ fn parse_display_routing_system() -> &'static CommandSet {
         static ref DISPLAY: CommandSet = command! {
             enter: ("display system routing table") => || { let _ = std::process::Command::new("route").status(); };
         };
-    };
+    }
     &DISPLAY
 }
 
@@ -189,7 +228,7 @@ fn parse_display_peer() -> &'static CommandSet {
                 });
             };
         };
-    };
+    }
     &DISPLAY
 }
 
@@ -215,16 +254,17 @@ fn parse_display_lsdb() -> &'static CommandSet {
                 lsa.into_iter().for_each(|(lsa, _)| log!("{}", lsa));
             };
         };
-    };
+    }
     &DISPLAY
 }
 
+/// interface 相关命令
 fn parse_interface() -> &'static CommandSet {
     lazy_static! {
         static ref IFACE: CommandSet = command! {
             arg: "<iface_name>"("interface setting...") => parse_interface_name;
         };
-    };
+    }
     &IFACE
 }
 
@@ -299,11 +339,145 @@ fn parse_interface_cost_set(name: String, arg: &str) -> &'static CommandSet {
     }
 }
 
+// fn parse_exit() -> &'static CommandSet {
+//     lazy_static! {
+//         static ref EXIT: CommandSet = command! {
+//             enter: ("exit ospfd") => || { block_on!(ProtocolDB::get()).routing_table.delete_all_routing(); exit(0); };
+//         };
+//     }
+//     &EXIT
+// }
 fn parse_exit() -> &'static CommandSet {
     lazy_static! {
         static ref EXIT: CommandSet = command! {
-            enter: ("exit ospfd") => || { block_on!(ProtocolDB::get()).routing_table.delete_all_routing(); exit(0); };
+            enter: ("exit ospfd") => || {
+                // 异步清理路由表，不阻塞当前线程
+                tokio::spawn(async {
+                    // 尽量忽略错误或记录日志
+                    let _ = ProtocolDB::get().await.routing_table.delete_all_routing();
+                });
+                // 直接退出程序
+                std::process::exit(0);
+            };
         };
-    };
+    }
     &EXIT
+}
+
+
+/// 使用 Crossterm 实现的交互式行编辑器，支持字符输入、退格、上下箭头浏览历史、回车提交
+struct LineEditor {
+    buffer: String,
+    history_index: Option<usize>,
+}
+
+impl LineEditor {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            history_index: None,
+        }
+    }
+
+    fn read_line(&mut self) -> String {
+        let mut stdout = stdout();
+        self.buffer.clear();
+        self.history_index = None;
+        // 每次读取前清除当前行并回到列0
+        execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine)).unwrap();
+        write!(stdout, "ospfd> ").unwrap();
+        stdout.flush().unwrap();
+    
+        loop {
+            if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
+                match code {
+                    KeyCode::Char(c) => {
+                        self.buffer.push(c);
+                        write!(stdout, "{}", c).unwrap();
+                    }
+                    KeyCode::Backspace => {
+                        if self.buffer.pop().is_some() {
+                            execute!(stdout, cursor::MoveLeft(1), Clear(ClearType::UntilNewLine))
+                                .unwrap();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        // 使用 "\r\n" 保证回到行首换行
+                        write!(stdout, "\r\n").unwrap();
+                        break;
+                    }
+                    KeyCode::Up => {
+                        // … (历史命令处理逻辑不变)
+                        let history = COMMAND_HISTORY.lock().unwrap();
+                        if history.is_empty() {
+                            continue;
+                        }
+                        let idx = match self.history_index {
+                            None => history.len() - 1,
+                            Some(i) if i > 0 => i - 1,
+                            Some(i) => i,
+                        };
+                        self.history_index = Some(idx);
+                        self.buffer = history.get(idx).unwrap().clone();
+                        execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))
+                            .unwrap();
+                        write!(stdout, "ospfd> {}", self.buffer).unwrap();
+                    }
+                    KeyCode::Down => {
+                        let history = COMMAND_HISTORY.lock().unwrap();
+                        if history.is_empty() {
+                            continue;
+                        }
+                        if let Some(i) = self.history_index {
+                            if i >= history.len() - 1 {
+                                self.history_index = None;
+                                self.buffer.clear();
+                            } else {
+                                self.history_index = Some(i + 1);
+                                self.buffer = history.get(i + 1).unwrap().clone();
+                            }
+                            execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))
+                                .unwrap();
+                            write!(stdout, "ospfd> {}", self.buffer).unwrap();
+                        }
+                    }
+                    _ => {}
+                }
+                stdout.flush().unwrap();
+            }
+        }
+        self.buffer.clone()
+    }    
+}
+
+pub fn main_loop() {
+    terminal::enable_raw_mode().unwrap();
+
+    // 设置 Ctrl+C 处理器：收到信号时禁用原始模式，然后退出程序
+    ctrlc::set_handler(|| {
+        // 尽量关闭原始模式，忽略错误
+        let _ = terminal::disable_raw_mode();
+        println!("\r\nCtrl+C received, exiting...");
+        std::process::exit(0);
+    }).expect("Error setting Ctrl-C handler");
+    /////TODO CtrlC没写完
+    //TODO /n -> /r/n
+
+    let mut editor = LineEditor::new();
+    loop {
+        let line = editor.read_line();
+        if line.trim().is_empty() {
+            continue;
+        }
+        {
+            let mut history = COMMAND_HISTORY.lock().unwrap();
+            history.push_back(line.clone());
+            if history.len() > MAX_HISTORY {
+                history.pop_front();
+            }
+        }
+        parse_cmd(line);
+    }
+    // 注意：由于主循环持续运行，此处通常不会退出。
+    // terminal::disable_raw_mode().unwrap();
 }

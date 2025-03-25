@@ -23,26 +23,28 @@ use pnet::datalink::{self, NetworkInterface};
 
 #[tokio::main()]
 async fn main() {
+    // 初始化 OSPF 数据库，插入 Backbone 区域
     ProtocolDB::get().await.insert_area(BackboneArea).await;
+    
+    // 筛选可用网络接口
     let interfaces: Vec<_> = datalink::interfaces().iter().filter_map(start).collect();
     if interfaces.is_empty() {
         panic!("No interface is available");
     }
+    
+    // 初始化数据库并启动接口
     ProtocolDB::init(&interfaces);
     interfaces.iter().for_each(|i| Interface::start(i));
 
     log!("waiting to start...");
     tokio::time::sleep(Duration::from_secs(2)).await;
+    
+    // 初始化全局 tokio 运行时句柄
     command::RUNTIME.get_or_init(tokio::runtime::Handle::current);
-    loop {
-        print!("ospfd> ");
-        std::io::stdout().flush().unwrap();
-        let mut cmd = Default::default();
-        match std::io::stdin().read_line(&mut cmd) {
-            Ok(_) => tokio::task::block_in_place(|| command::parse_cmd(cmd)),
-            Err(e) => log_error!("Error while reading cmd: {}", e),
-        }
-    }
+
+    // 调用使用 Crossterm 实现的交互主循环
+    // 此函数内部会启用原始模式并持续读取用户输入
+    command::main_loop();
 }
 
 fn start(iface: &NetworkInterface) -> Option<AInterface> {
