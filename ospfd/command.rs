@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use trie_rs::{Trie, TrieBuilder};
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent}, // 移除了 KeyModifiers
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers}, // 移除了 KeyModifiers
     execute,
     terminal::{self, Clear, ClearType},
 };
@@ -389,12 +389,16 @@ impl LineEditor {
         stdout.flush().unwrap();
     
         loop {
-            if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
+            if let Event::Key(KeyEvent { code, modifiers, .. }) = event::read().unwrap() {
                 match code {
-                    KeyCode::Char(c) => {
-                        self.buffer.push(c);
-                        write!(stdout, "{}", c).unwrap();
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        // println!("Ctrl+C 被捕获");
+                        parse_exit();
+                        break; // 例如：退出循环
                     }
+                    // KeyCode::Char(c) => {
+                    //     // 处理普通字符
+                    // }
                     KeyCode::Backspace => {
                         if self.buffer.pop().is_some() {
                             execute!(stdout, cursor::MoveLeft(1), Clear(ClearType::UntilNewLine))
@@ -441,6 +445,11 @@ impl LineEditor {
                             write!(stdout, "ospfd> {}", self.buffer).unwrap();
                         }
                     }
+                    KeyCode::Char(c) => {
+                        self.buffer.push(c);
+                        write!(stdout, "{}", c).unwrap();
+                    }
+
                     _ => {}
                 }
                 stdout.flush().unwrap();
@@ -452,15 +461,7 @@ impl LineEditor {
 
 pub fn main_loop() {
     terminal::enable_raw_mode().unwrap();
-
-    // 设置 Ctrl+C 处理器：收到信号时禁用原始模式，然后退出程序
-    ctrlc::set_handler(|| {
-        // 尽量关闭原始模式，忽略错误
-        let _ = terminal::disable_raw_mode();
-        println!("\r\nCtrl+C received, exiting...");
-        std::process::exit(0);
-    }).expect("Error setting Ctrl-C handler");
-    /////TODO CtrlC没写完
+    //TODO CtrlC没写完
     //TODO /n -> /r/n
 
     let mut editor = LineEditor::new();
