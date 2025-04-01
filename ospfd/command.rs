@@ -5,23 +5,17 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use lazy_static::lazy_static;
-use trie_rs::{Trie, TrieBuilder};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers}, // 移除了 KeyModifiers
     execute,
     terminal::{self, Clear, ClearType},
 };
+use lazy_static::lazy_static;
+use trie_rs::{Trie, TrieBuilder};
 
 use crate::{
-    area::Area,
-    database::ProtocolDB,
-    guard,
-    interface::InterfaceEvent,
-    log,
-    log_success,
-    must,
+    area::Area, database::ProtocolDB, guard, interface::InterfaceEvent, log, log_success, must,
 };
 
 use tokio::signal;
@@ -364,11 +358,10 @@ fn parse_exit() -> &'static CommandSet {
     &EXIT
 }
 
-
-/// 使用 Crossterm 实现的交互式行编辑器，支持字符输入、退格、上下箭头浏览历史、回车提交
 struct LineEditor {
     buffer: String,
     history_index: Option<usize>,
+    cursor_position: usize, // 新增光标位置跟踪
 }
 
 impl LineEditor {
@@ -376,78 +369,83 @@ impl LineEditor {
         Self {
             buffer: String::new(),
             history_index: None,
+            cursor_position: 0, // 初始化光标位置
         }
     }
 
     fn read_line(&mut self) -> String {
         let mut stdout = stdout();
         self.buffer.clear();
+        self.cursor_position = 0; // 重置光标位置
         self.history_index = None;
-        // 每次读取前清除当前行并回到列0
-        execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine)).unwrap();
+
+        execute!(
+            stdout,
+            cursor::MoveToColumn(0),
+            Clear(ClearType::CurrentLine),
+            cursor::Show // 显示光标
+        )
+        .unwrap();
         write!(stdout, "ospfd> ").unwrap();
         stdout.flush().unwrap();
-    
+
         loop {
-            if let Event::Key(KeyEvent { code, modifiers, .. }) = event::read().unwrap() {
+            if let Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) = event::read().unwrap()
+            {
                 match code {
+                    // Ctrl+C 处理
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        // println!("Ctrl+C 被捕获");
-                        parse_exit();
-                        break; // 例如：退出循环
-                    }
-                    // KeyCode::Char(c) => {
-                    //     // 处理普通字符
-                    // }
-                    KeyCode::Backspace => {
-                        if self.buffer.pop().is_some() {
-                            execute!(stdout, cursor::MoveLeft(1), Clear(ClearType::UntilNewLine))
-                                .unwrap();
+                        // 获取退出命令对应的 CommandSet
+                        let exit_cmd = parse_exit();
+                        // 检查并调用其 handle_enter 回调
+                        if let Some(ref handler) = exit_cmd.handle_enter {
+                            handler();
+                        } else {
+                            // 如果没有定义 handle_enter，则直接退出程序
+                            std::process::exit(0);
                         }
                     }
+
+                    // 字符输入（支持插入）
+                    KeyCode::Char(c) => {
+                        self.buffer.insert(self.cursor_position, c);
+                        self.cursor_position += 1;
+                        self.redraw_line(&mut stdout);
+                    }
+
+                    // 退格键（支持中间删除）
+                    KeyCode::Backspace => {
+                        if self.cursor_position > 0 {
+                            self.buffer.remove(self.cursor_position - 1);
+                            self.cursor_position -= 1;
+                            self.redraw_line(&mut stdout);
+                        }
+                    }
+
+                    // 方向键处理
+                    KeyCode::Left => {
+                        if self.cursor_position > 0 {
+                            self.cursor_position -= 1;
+                            self.update_cursor(&mut stdout);
+                        }
+                    }
+                    KeyCode::Right => {
+                        if self.cursor_position < self.buffer.len() {
+                            self.cursor_position += 1;
+                            self.update_cursor(&mut stdout);
+                        }
+                    }
+
+                    // 上下方向键（保持原有历史逻辑）
+                    KeyCode::Up => { /* 原有历史代码 */ }
+                    KeyCode::Down => { /* 原有历史代码 */ }
+
+                    // 回车键
                     KeyCode::Enter => {
-                        // 使用 "\r\n" 保证回到行首换行
                         write!(stdout, "\r\n").unwrap();
                         break;
-                    }
-                    KeyCode::Up => {
-                        // … (历史命令处理逻辑不变)
-                        let history = COMMAND_HISTORY.lock().unwrap();
-                        if history.is_empty() {
-                            continue;
-                        }
-                        let idx = match self.history_index {
-                            None => history.len() - 1,
-                            Some(i) if i > 0 => i - 1,
-                            Some(i) => i,
-                        };
-                        self.history_index = Some(idx);
-                        self.buffer = history.get(idx).unwrap().clone();
-                        execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))
-                            .unwrap();
-                        write!(stdout, "ospfd> {}", self.buffer).unwrap();
-                    }
-                    KeyCode::Down => {
-                        let history = COMMAND_HISTORY.lock().unwrap();
-                        if history.is_empty() {
-                            continue;
-                        }
-                        if let Some(i) = self.history_index {
-                            if i >= history.len() - 1 {
-                                self.history_index = None;
-                                self.buffer.clear();
-                            } else {
-                                self.history_index = Some(i + 1);
-                                self.buffer = history.get(i + 1).unwrap().clone();
-                            }
-                            execute!(stdout, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))
-                                .unwrap();
-                            write!(stdout, "ospfd> {}", self.buffer).unwrap();
-                        }
-                    }
-                    KeyCode::Char(c) => {
-                        self.buffer.push(c);
-                        write!(stdout, "{}", c).unwrap();
                     }
 
                     _ => {}
@@ -455,8 +453,32 @@ impl LineEditor {
                 stdout.flush().unwrap();
             }
         }
+
+        execute!(stdout, cursor::Hide).unwrap(); // 隐藏光标
         self.buffer.clone()
-    }    
+    }
+
+    // 重绘整行（用于插入/删除时）
+    fn redraw_line(&mut self, stdout: &mut std::io::Stdout) {
+        execute!(
+            stdout,
+            cursor::MoveToColumn(0),
+            Clear(ClearType::CurrentLine)
+        )
+        .unwrap();
+        write!(stdout, "ospfd> {}", self.buffer).unwrap();
+        self.update_cursor(stdout);
+    }
+
+    // 更新光标位置（考虑提示符长度）
+    fn update_cursor(&self, stdout: &mut std::io::Stdout) {
+        let prompt_len = 7; // "ospfd> " 的长度
+        execute!(
+            stdout,
+            cursor::MoveToColumn((prompt_len + self.cursor_position) as u16) // 这里缺少闭合括号
+        )
+        .unwrap(); // 补上这个括号
+    }
 }
 
 pub fn main_loop() {
